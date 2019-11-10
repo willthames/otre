@@ -4,17 +4,18 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/honeycombio/honeycomb-opentracing-proxy/app"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 )
 
@@ -95,7 +96,7 @@ func ungzipWrap(hf func(http.ResponseWriter, *http.Request)) func(http.ResponseW
 	}
 }
 
-func (a *App) Start() error {
+func (a *App) start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/spans", ungzipWrap(a.handleSpans))
 
@@ -108,22 +109,24 @@ func (a *App) Start() error {
 	return nil
 }
 
-func (a *App) Stop() error {
+func (a *App) stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	return a.server.Shutdown(ctx)
 }
 
 func main() {
-	a := &app.App{
-		Port: "8080",
+	port := flag.Int("port", 8080, "server port")
+	flag.Parse()
+	a := &App{
+		Port: strconv.Itoa(*port),
 	}
-	err := a.Start()
+	err := a.start()
 	if err != nil {
 		fmt.Printf("Error starting app: %v\n", err)
 		os.Exit(1)
 	}
-	defer a.Stop()
+	defer a.stop()
 	waitForSignal()
 }
 
