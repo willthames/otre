@@ -1,0 +1,264 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: opa-tracing
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: docker-debug-files-config
+  namespace: opa-tracing
+data:
+  nginx.conf: |-
+    worker_processes 1;
+
+    pcre_jit on;
+
+    include /etc/nginx/modules/*.conf;
+    load_module /usr/local/openresty/nginx/modules/ngx_http_opentracing_module.so;
+
+    worker_rlimit_nofile 32768;
+
+    events {
+        worker_connections 4096;
+        multi_accept       on;
+        use                epoll;
+    }
+
+    env VERSION;
+
+    http {
+        include /usr/local/openresty/nginx/conf/mime.types;
+        default_type application/octet-stream;
+
+        server_tokens off;
+
+        keepalive_timeout 65;
+
+        aio threads;
+        directio 100k;
+        output_buffers 2 1M;
+
+        sendfile on;
+        sendfile_max_chunk 512k;
+
+        tcp_nodelay on;
+        tcp_nopush on;
+
+        gzip on;
+        gzip_comp_level 5;
+        gzip_min_length 100;
+        gzip_http_version 1.1;
+        gzip_buffers 16 8k;
+        gzip_proxied any;
+        gzip_types
+            text/plain
+            text/css
+            text/js
+            text/xml
+            text/javascript
+            application/javascript
+            application/x-javascript
+            application/json
+            application/xml
+            application/rss+xml
+            image/svg+xml;
+
+        log_format main
+            '$time_date_time.$time_millis$time_zone $remote_addr $realip_remote_addr $req_id $request_method $best_http_host$request_uri $server_protocol $status $bytes_sent $request_time "$http_referer" "$http_user_agent" $proxy_upstream_name $upstream_response_time $upstream_status';
+
+        access_log /dev/stdout main;
+        error_log /dev/stdout info;
+
+        map $msec $time_millis {
+           ~[0-9]+\.(?P<millis>[0-9][0-9][0-9]) $millis;
+        }
+
+        map $time_iso8601 $time_date_time {
+          "~^(?<datetime>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})"   $datetime;
+        }
+
+        map $time_iso8601 $time_zone {
+          "~^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?<zone>.*)$"    $zone;
+        }
+
+        # Retain the default nginx handling of requests without a "Connection" header
+        map $http_upgrade $connection_upgrade {
+            default upgrade;
+            ''      close;
+        }
+
+        # trust http_x_forwarded_proto headers correctly indicate ssl offloading
+        map $http_x_forwarded_proto $pass_access_scheme {
+            default $http_x_forwarded_proto;
+            ''      $scheme;
+        }
+
+        map $http_x_forwarded_port $pass_server_port {
+            default $http_x_forwarded_port;
+            ''      $server_port;
+        }
+
+        map $pass_server_port $pass_port {
+            443              443;
+            default          $pass_server_port;
+        }
+
+        # Obtain best http host
+        map $http_host $this_host {
+            default          $http_host;
+            ''               $host;
+        }
+
+        map $http_x_forwarded_host $best_http_host {
+            default          $http_x_forwarded_host;
+            ''               $this_host;
+        }
+
+        # Reverse proxies can detect if a client provides a X-Request-ID header, and pass it on to the backend server.
+        # If no such header is provided, it can provide a random value.
+        map $http_x_request_id $req_id {
+            default   $http_x_request_id;
+            ""        $request_id;
+        }
+
+        lua_package_path "/etc/nginx/lua/?.lua;/etc/nginx/lua/vendor/?.lua;/usr/local/lib/lua/?.lua;/usr/local/openresty/site/lualib/?.lua;;";
+        lua_package_cpath "/usr/local/openresty/lualib/?.so;/usr/local/lib/lua/?.so;/usr/lib/lua-platform-path/lua/5.1/?.so;;";
+
+        # Enable tracing for all requests.
+        opentracing_load_tracer /usr/local/lib/libzipkin_opentracing_plugin.so /etc/nginx/conf.d/zipkin-nginx-conf.json;
+        opentracing on;
+        opentracing_trace_locations off;
+        opentracing_operation_name $uri;
+
+        # Optionally, set additional tags.
+        opentracing_tag http_user_agent $http_user_agent;
+        opentracing_tag request_id $req_id;
+
+        include /etc/nginx/conf.d/*.conf;
+    }
+
+  backend.conf: |-
+    server {
+      listen 80;
+
+      set $backend_docker_debug 127.0.0.1:5000;
+      set_by_lua_block $version {
+        return os.getenv("VERSION")
+      }
+      opentracing_tag version $version;
+
+      location / {
+        opentracing_propagate_context;
+        set $proxy_upstream_name docker-debug-container;
+        proxy_pass http://$backend_docker_debug;
+      }
+    }
+  zipkin-nginx-conf.json: |-
+    {
+      "service_name": "docker-debug",
+      "collector_host": "zipkin.monitoring",
+      "collector_port": 9411,
+      "reporting_period": 1000,
+      "max_buffered_spans": 100,
+      "sample_rate": 1.0
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: docker-debug
+  namespace: opa-tracing
+  labels:
+    app: docker-debug
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: docker-debug
+  template:
+    metadata:
+      labels:
+        app: docker-debug
+    spec:
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+      containers:
+        - name: docker-debug
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: VERSION
+              value: green-v0.1-1-gd317a56
+          image: willthames/docker-debug:green-v0.1-1-gd317a56
+          readinessProbe:
+            tcpSocket:
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+        - name: nginx-sidecar
+          command:
+            - nginx
+            - -c
+            - /etc/nginx/nginx.conf
+            - -g
+            - daemon off;
+          image: quay.io/kubernetes-ingress-controller/nginx:0.92
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          env:
+            - name: TRACING_HOST
+              value: http://jaeger.monitoring:9411
+            - name: TRACING_SAMPLE_RATE
+              value: 1.0
+          readinessProbe:
+            tcpSocket:
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: docker-debug-files-config
+              mountPath: /etc/nginx/conf.d/backend.conf
+              subPath: backend.conf
+            - name: docker-debug-files-config
+              mountPath: /etc/nginx/conf.d/zipkin-nginx-conf.json
+              subPath: zipkin-nginx-conf.json
+            - name: docker-debug-files-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+      volumes:
+        - name: docker-debug-files-config
+          configMap:
+            name: docker-debug-files-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: docker-debug
+  namespace: opa-tracing
+  labels:
+    app: docker-debug
+spec:
+  ports:
+  - port: 80 # the port that this service should serve on
+    # the container on each pod to connect to, can be a name
+    # (e.g. 'www') or a number (e.g. 80)
+    targetPort: 80
+    protocol: TCP
+  # just like the selector in the deployment,
+  # but this time it identifies the set of pods to load balance
+  # traffic to.
+  selector:
+    app: docker-debug
