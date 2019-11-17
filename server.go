@@ -4,31 +4,24 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 )
-
-type App struct {
-	Port   string
-	server *http.Server
-}
 
 // handleSpans handles the /api/v1/spans POST endpoint. It decodes the request
 // body and normalizes it to a slice of types.Span instances. The Sink
 // handles that slice. The Mirror, if configured, takes the request body
 // verbatim and sends it to another host.
-func (a *App) handleSpans(w http.ResponseWriter, r *http.Request) {
+func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	data, err := ioutil.ReadAll(r.Body)
@@ -96,7 +89,7 @@ func ungzipWrap(hf func(http.ResponseWriter, *http.Request)) func(http.ResponseW
 	}
 }
 
-func (a *App) start() error {
+func (a *app) start() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/spans", ungzipWrap(a.handleSpans))
 
@@ -109,18 +102,14 @@ func (a *App) start() error {
 	return nil
 }
 
-func (a *App) stop() error {
+func (a *app) stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	return a.server.Shutdown(ctx)
 }
 
 func main() {
-	port := flag.Int("port", 8080, "server port")
-	flag.Parse()
-	a := &App{
-		Port: strconv.Itoa(*port),
-	}
+	a := cliParse()
 	err := a.start()
 	if err != nil {
 		fmt.Printf("Error starting app: %v\n", err)

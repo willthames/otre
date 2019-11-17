@@ -1,4 +1,4 @@
-module github.com/willthames/opa-tracing
+module github.com/willthames/otre
 
 require github.com/open-policy-agent/opa v0.15.0
 
@@ -15,6 +15,7 @@ require (
 	github.com/honeycombio/libhoney-go v1.12.2 // indirect
 	github.com/klauspost/compress v1.9.1 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
+	github.com/sirupsen/logrus v1.4.1
 	github.com/uber/jaeger v1.15.1 // indirect
 	github.com/uber/tchannel-go v1.16.0 // indirect
 	github.com/vmihailenco/msgpack v4.0.4+incompatible // indirect
