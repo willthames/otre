@@ -4,17 +4,27 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
+	v1 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v1"
+	v2 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v2"
+	"github.com/Sirupsen/logrus"
+)
+
+type key int
+
+const (
+	requestIDKey key = 0
 )
 
 // handleSpans handles the /api/v1/spans POST endpoint. It decodes the request
@@ -37,10 +47,29 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 	switch contentType {
 	case "application/json":
 		logrus.Info("Receiving data in json format")
-		spans, err = types.DecodeJSON(bytes.NewReader(data))
+		switch r.URL.Path {
+		case "/api/v1/spans":
+			spans, err = v1.DecodeJSON(bytes.NewReader(data))
+		case "/api/v2/spans":
+			spans, err = v2.DecodeJSON(bytes.NewReader(data))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("invalid version"))
+			return
+		}
 	case "application/x-thrift":
 		logrus.Info("Receiving data in thrift format")
-		spans, err = types.DecodeThrift(bytes.NewReader(data))
+		switch r.URL.Path {
+		case "/api/v1/spans":
+			spans, err = v1.DecodeThrift(bytes.NewReader(data))
+		case "/api/v2/spans":
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("thrift is not supported for v2 spans"))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("invalid version"))
+			return
+		}
 	default:
 		logrus.WithField("contentType", contentType).Info("unknown content type")
 		w.WriteHeader(http.StatusBadRequest)
@@ -53,9 +82,14 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("error unmarshaling span data"))
 		return
 	}
-
+	var opa_data []byte
 	for _, span := range spans {
-		logrus.WithField("span", span).Info("Accepted span")
+		opa_data, err = json.Marshal(span)
+		if err != nil {
+			logrus.WithError(err).WithField("span", span).Info("error marshaling span")
+		} else {
+			logrus.WithField("span", string(opa_data)).Info("Accepted span")
+		}
 	}
 
 	w.WriteHeader(http.StatusAccepted)
@@ -90,16 +124,36 @@ func ungzipWrap(hf func(http.ResponseWriter, *http.Request)) func(http.ResponseW
 }
 
 func (a *app) start() error {
+	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/spans", ungzipWrap(a.handleSpans))
+	mux.HandleFunc("/api/v2/spans", ungzipWrap(a.handleSpans))
+	mux.HandleFunc("/", http.NotFoundHandler().ServeHTTP)
 
 	a.server = &http.Server{
-		Addr:    a.Port,
-		Handler: mux,
+		Addr:     ":" + a.Port,
+		Handler:  logging(logger)(mux),
+		ErrorLog: logger,
 	}
 	go a.server.ListenAndServe()
 	logrus.WithField("port", a.Port).Info("Listening")
 	return nil
+}
+
+func logging(logger *log.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				requestID, ok := r.Context().Value(requestIDKey).(string)
+				if !ok {
+					requestID = "unknown"
+				}
+				logger.Println(requestID, r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent())
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func (a *app) stop() error {
