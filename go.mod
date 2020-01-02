@@ -11,7 +11,7 @@ require (
 	github.com/facebookgo/muster v0.0.0-20150708232844-fd3d7953fd52 // indirect
 	github.com/facebookgo/startstop v0.0.0-20161013234910-bc158412526d // indirect
 	github.com/facebookgo/structtag v0.0.0-20150214074306-217e25fb9691 // indirect
-	github.com/honeycombio/honeycomb-opentracing-proxy v1.0.1
+	github.com/honeycombio/honeycomb-opentracing-proxy v2.1.0+incompatible
 	github.com/honeycombio/libhoney-go v1.12.2 // indirect
 	github.com/klauspost/compress v1.9.1 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect

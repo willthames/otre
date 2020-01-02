@@ -1,9 +1,12 @@
 FROM golang:1.13.4-stretch AS builder
 WORKDIR /src
-COPY server.go cli.go go.mod /src/
-RUN go install ./...
+COPY go.mod go.sum /src/
+RUN go mod download
+COPY cli.go server.go /src/
+COPY traces/ /src/traces/
+COPY rules/ /src/rules/
 
-FROM scratch
-COPY --from=builder /go/bin/otre /otre
+RUN go build ./... && go test ./... && go install ./...
+
 EXPOSE 9411
-CMD ["/otre", "--port", "9411"]
+CMD ["/go/bin/otre", "--port", "9411"]
