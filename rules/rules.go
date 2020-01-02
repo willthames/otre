@@ -38,8 +38,10 @@ func NewRulesEngine(policy string) *RulesEngine {
 					if ast.Compare(chance, ast.IntNumberTerm(0)) == 0 {
 						result = false
 					} else {
-						roll := ast.IntNumberTerm(rand.Intn(100))
-						result = (ast.Compare(chance, roll) < 0)
+						roll := ast.IntNumberTerm(rand.Intn(100) + 1)
+						// 1% is roll == 0, chance == 1
+						// 2% is roll in [0,1], chance == 2
+						result = (ast.Compare(roll, chance) < 0)
 					}
 					return ast.BooleanTerm(result), nil
 				}

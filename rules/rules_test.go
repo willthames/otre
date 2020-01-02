@@ -52,7 +52,7 @@ func TestAcceptTrace(t *testing.T) {
 		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
 		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
 		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), true),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), true),
+		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
 		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
 	}
 
@@ -67,6 +67,7 @@ func TestAcceptTrace(t *testing.T) {
 			t.Errorf("Result of acceptSpans for trace %v not as expected (%v)", trace.spans, trace.expected)
 		}
 	}
+	// Seed 1 has 25, the critical edge case, in the first 8 values
 	rand.Seed(1)
 	for i, trace := range randomTraces {
 		if rulesengine.acceptSpans(trace.spans) != trace.expected {
