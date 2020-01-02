@@ -1,13 +1,8 @@
 apiVersion: v1
-kind: Namespace
-metadata:
-  name: opa-tracing
----
-apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: docker-debug-files-config
-  namespace: opa-tracing
+  name: otre-files-config
+  namespace: monitoring
 data:
   nginx.conf: |-
     worker_processes 1;
@@ -125,141 +120,95 @@ data:
         lua_package_path "/etc/nginx/lua/?.lua;/etc/nginx/lua/vendor/?.lua;/usr/local/lib/lua/?.lua;/usr/local/openresty/site/lualib/?.lua;;";
         lua_package_cpath "/usr/local/openresty/lualib/?.so;/usr/local/lib/lua/?.so;/usr/lib/lua-platform-path/lua/5.1/?.so;;";
 
-        # Enable tracing for all requests.
-        opentracing_load_tracer /usr/local/lib/libzipkin_opentracing_plugin.so /etc/nginx/conf.d/zipkin-nginx-conf.json;
-        opentracing on;
-        opentracing_trace_locations off;
-        opentracing_operation_name $uri;
-
-        # Optionally, set additional tags.
-        opentracing_tag http_user_agent $http_user_agent;
-        opentracing_tag request_id $req_id;
-
         include /etc/nginx/conf.d/*.conf;
     }
 
   backend.conf: |-
     server {
-      listen 80;
+      listen 9411;
 
-      set $backend_docker_debug 127.0.0.1:5000;
-      set_by_lua_block $version {
-        return os.getenv("VERSION")
-      }
-      opentracing_tag version $version;
+      set $backend_otre 127.0.0.1:9410;
 
       location / {
-        opentracing_propagate_context;
-        set $proxy_upstream_name docker-debug-container;
-        proxy_pass http://$backend_docker_debug;
+        set $proxy_upstream_name otre;
+        proxy_pass http://$backend_otre;
       }
     }
-  zipkin-nginx-conf.json: |-
-    {
-      "service_name": "docker-debug",
-      "collector_host": "otre.monitoring",
-      "collector_port": 9411,
-      "reporting_period": 1000,
-      "max_buffered_spans": 100,
-      "sample_rate": 1.0
-    }
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: docker-debug
-  namespace: opa-tracing
+  name: otre
+  namespace: monitoring
   labels:
-    app: docker-debug
+    app: otre
 spec:
-  replicas: 2
   selector:
     matchLabels:
-      app: docker-debug
+      app: otre
+  replicas: 1
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
-        app: docker-debug
+        app: otre
     spec:
-      dnsPolicy: ClusterFirst
-      dnsConfig:
-        options:
-          - name: ndots
-            value: "1"
-      containers:
-        - name: docker-debug
-          securityContext:
-            runAsUser: 1000
-            runAsGroup: 1000
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 5000
-          env:
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-            - name: VERSION
-              value: blue-v0.1-5-g5069c1a
-            - name: TRACING_HOST
-              value: otre.monitoring.svc.cluster.local
-            - name: TRACING_PORT
-              value: "9411"
-            - name: TRACING_SAMPLE_RATE
-              value: "1"
-          image: willthames/docker-debug:blue-v0.1-5-g5069c1a
-          readinessProbe:
-            tcpSocket:
-              port: 5000
-            initialDelaySeconds: 5
-            periodSeconds: 5
-        - name: nginx-sidecar
-          command:
-            - nginx
-            - -c
-            - /etc/nginx/nginx.conf
-            - -g
-            - daemon off;
-          image: quay.io/kubernetes-ingress-controller/nginx:0.92
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 80
-          readinessProbe:
-            tcpSocket:
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 5
-          volumeMounts:
-            - name: docker-debug-files-config
-              mountPath: /etc/nginx/conf.d/backend.conf
-              subPath: backend.conf
-            - name: docker-debug-files-config
-              mountPath: /etc/nginx/conf.d/zipkin-nginx-conf.json
-              subPath: zipkin-nginx-conf.json
-            - name: docker-debug-files-config
-              mountPath: /etc/nginx/nginx.conf
-              subPath: nginx.conf
-      volumes:
-        - name: docker-debug-files-config
-          configMap:
-            name: docker-debug-files-config
+        containers:
+          - image: willthames/otre:0.1.7
+            name: otre
+            command:
+              - /go/bin/otre
+            args:
+              - --port
+              - "9410"
+          - name: nginx-sidecar
+            command:
+              - nginx
+              - -c
+              - /etc/nginx/nginx.conf
+              - -g
+              - daemon off;
+            image: quay.io/kubernetes-ingress-controller/nginx:0.92
+            imagePullPolicy: Always
+            readinessProbe:
+              tcpSocket:
+                port: 9411
+              initialDelaySeconds: 5
+              periodSeconds: 5
+            volumeMounts:
+              - name: otre-files-config
+                mountPath: /etc/nginx/conf.d/backend.conf
+                subPath: backend.conf
+              - name: otre-files-config
+                mountPath: /etc/nginx/nginx.conf
+                subPath: nginx.conf
+        volumes:
+          - name: otre-files-config
+            configMap:
+              name: otre-files-config
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: docker-debug
-  namespace: opa-tracing
+  name: otre
+  namespace: monitoring
   labels:
-    app: docker-debug
+    app: otre
 spec:
   ports:
-  - port: 80 # the port that this service should serve on
-    # the container on each pod to connect to, can be a name
-    # (e.g. 'www') or a number (e.g. 80)
-    targetPort: 80
-    protocol: TCP
-  # just like the selector in the deployment,
-  # but this time it identifies the set of pods to load balance
-  # traffic to.
+    - name: otre
+      port: 9411
+      protocol: TCP
+      targetPort: 9411
+    - name: otre-udp
+      port: 9412
+      protocol: UDP
+      targetPort: 9410
   selector:
-    app: docker-debug
+    app: otre

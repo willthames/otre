@@ -139,7 +139,7 @@ data:
 
   backend.conf: |-
     server {
-      listen 80;
+      listen 8080;
       resolver 10.96.0.10;  # kind resolver
 
       set $backend_docker_debug docker-debug.opa-tracing.svc.cluster.local;
@@ -157,7 +157,7 @@ data:
   zipkin-nginx-conf.json: |-
     {
       "service_name": "nginx-ingress",
-      "collector_host": "zipkin.monitoring",
+      "collector_host": "otre.monitoring",
       "collector_port": 9411,
       "reporting_period": 1000,
       "max_buffered_spans": 100,
@@ -198,7 +198,7 @@ spec:
               #- "10000"
           imagePullPolicy: Always
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           env:
             - name: NODE_NAME
               valueFrom:
@@ -209,7 +209,7 @@ spec:
           image: quay.io/kubernetes-ingress-controller/nginx:0.92
           readinessProbe:
             tcpSocket:
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
           volumeMounts:
@@ -239,7 +239,7 @@ spec:
   - port: 80 # the port that this service should serve on
     # the container on each pod to connect to, can be a name
     # (e.g. 'www') or a number (e.g. 80)
-    targetPort: 80
+    targetPort: 8080
     protocol: TCP
   # just like the selector in the deployment,
   # but this time it identifies the set of pods to load balance
