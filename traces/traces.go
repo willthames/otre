@@ -54,10 +54,29 @@ func (t *Trace) IsComplete() bool {
 	var parentID SpanID
 	for _, span := range t.spans {
 		parentID = SpanID(span.CoreSpanMetadata.ParentID)
-		_, ok := t.spans[parentID]
-		if !ok {
-			return false
+		if parentID != "" {
+			_, ok := t.spans[parentID]
+			if !ok {
+				return false
+			}
 		}
 	}
 	return true
+}
+
+// MissingSpans returns the SpanIDs of all spans that are
+// a parent ID of a child span but not present in the trace
+func (t *Trace) MissingSpans() []SpanID {
+	var parentID SpanID
+	result := []SpanID{}
+	for _, span := range t.spans {
+		parentID = SpanID(span.CoreSpanMetadata.ParentID)
+		if parentID != "" {
+			_, ok := t.spans[parentID]
+			if !ok {
+				result = append(result, parentID)
+			}
+		}
+	}
+	return result
 }
