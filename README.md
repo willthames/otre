@@ -1,7 +1,15 @@
-Opentracing policy proxy
+Opentracing Rules Engine
 ------------------------
 
-The opentracing policy proxy is designed as a proxy that provides
+Pronunciation
+=============
+
+Opentracing Rules Engine, otre for short, is pronounced Ottery
+
+Rules
+=====
+
+The opentracing rules engine proxy is designed as a proxy that provides
 a means of deciding which traces to forward on to the next hop.
 
 By providing an open policy agent ruleset against which to check
@@ -26,8 +34,6 @@ at which point the trace id is tagged with reject. However,
 1 minute later, traces with that trace id turn up with durations
 longer than 60 seconds, at which point the trace id gets
 removed from the reject store.
-
-
 
 Minimum viable feature set
 ==========================
