@@ -2,6 +2,7 @@ package rules
 
 import (
 	"encoding/json"
+	"github.com/willthames/otre/traces"
 	"io/ioutil"
 	"math/rand"
 	"path"
@@ -14,10 +15,10 @@ import (
 
 type testTrace struct {
 	spans    []types.Span
-	expected bool
+	expected int
 }
 
-func newTestTrace(traceFile string, expected bool) *testTrace {
+func newTestTrace(traceFile string, expected int) *testTrace {
 	t := new(testTrace)
 	byteTraces, err := ioutil.ReadFile(traceFile)
 	t.spans = *new([]types.Span)
@@ -39,21 +40,12 @@ func TestAcceptTrace(t *testing.T) {
 	_, filename, _, _ := runtime.Caller(0)
 	parentdir := path.Join(path.Dir(filename), "..")
 
-	testTraces := [3]testTrace{
-		*newTestTrace(path.Join(parentdir, "rules", "trace_5xx.json"), true),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_ping.json"), false),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_api_newservice.json"), true),
-	}
-
-	randomTraces := [8]testTrace{
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), true),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
-		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), false),
+	testTraces := [5]testTrace{
+		*newTestTrace(path.Join(parentdir, "rules", "trace_5xx.json"), 100),
+		*newTestTrace(path.Join(parentdir, "rules", "trace_ping.json"), 0),
+		*newTestTrace(path.Join(parentdir, "rules", "trace_ping_5xx.json"), 0),
+		*newTestTrace(path.Join(parentdir, "rules", "trace_api_newservice.json"), 100),
+		*newTestTrace(path.Join(parentdir, "rules", "trace_normal.json"), 25),
 	}
 
 	rules, err := ioutil.ReadFile("policy.rego")
@@ -63,15 +55,21 @@ func TestAcceptTrace(t *testing.T) {
 	}
 	rulesengine := NewRulesEngine(string(rules))
 	for _, trace := range testTraces {
-		if rulesengine.acceptSpans(trace.spans) != trace.expected {
-			t.Errorf("Result of acceptSpans for trace %v not as expected (%v)", trace.spans, trace.expected)
+		sampleResult := rulesengine.sampleSpans(trace.spans)
+		if sampleResult.sampleRate != trace.expected {
+			t.Errorf("Result of acceptSpans for trace %v not as expected (%v), reason: %v", trace.spans, trace.expected, sampleResult.reason)
 		}
 	}
 	// Seed 1 has 25, the critical edge case, in the first 8 values
 	rand.Seed(1)
-	for i, trace := range randomTraces {
-		if rulesengine.acceptSpans(trace.spans) != trace.expected {
-			t.Errorf("Result of acceptSpans for random trace #%d not as expected (%v)", i, trace.expected)
+	for i := 0; i < 8; i++ {
+		randomTrace := traces.NewTrace(testTraces[4].spans)
+		decision, _ := rulesengine.AcceptTrace(*randomTrace)
+		if i == 5 && !decision {
+			t.Errorf("Result of AcceptTrace for random trace #%d not as expected (%v)", i, true)
+
+		} else if i != 5 && decision {
+			t.Errorf("Result of AcceptTrace for random trace #%d not as expected (%v)", i, false)
 		}
 	}
 }

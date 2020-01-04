@@ -1,24 +1,38 @@
 package otre
 
-accept = false {
-  url := input[_].binaryAnnotations["http.url"]
-  trace(url)
+default url = ""
+default status = 0
+
+ping[span] {
+  span := input[_]
+  url :=  input[_].binaryAnnotations["http.url"]
   endswith(url, "/ping")
-  # msg := sprintf("URL ending /ping is a ping URL")
-} else = true {
-  url := input[_].binaryAnnotations["http.url"]
-  trace(url)
+}
+
+api_new_service[span] {
+  span := input[_]
+  url :=  input[_].binaryAnnotations["http.url"]
   contains(url, "/api/newService")
-  # msg := sprintf("URL /api/newService is for the new service with 100% sampling")
-} else = true {
-  status := to_number(input[_].binaryAnnotations["http.status_code"])
+}
+
+error_response[span] {
+  span := input[_]
+  status := to_number(span.binaryAnnotations["http.status_code"])
   status >= 500
-  # msg := sprintf("Status code %v >= 500", [status])
-} else = true {
-   # msg := "Default sample rate"
-   # delete this block to test with policy_test.rego
-   percentChance(25)
-} else = false {
-  # msg := "Fallback rejection rule"
+}
+
+response = {"sampleRate": 0, "reason": msg} {
+  some span
+  ping[span]
+  msg := "URL ending /ping is a ping URL"
+} else = {"sampleRate": 100, "reason": msg} {
+  some span
+  api_new_service[span]
+  msg := "URL is for the new service with 100% sampling"
+} else = {"sampleRate": 100, "reason": msg} {
+  some span
+  error_response[span]
+  msg := sprintf("Status code %v >= 500", [status])
+}  else = {"sampleRate": 25, "reason": "fallback sample rate"} {
   true
 }

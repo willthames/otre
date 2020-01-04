@@ -21,6 +21,16 @@ type Trace struct {
 // TraceBuffer is a mapping of TraceIDs to Traces
 type TraceBuffer = map[TraceID]Trace
 
+// NewTrace creates a Trace object from a list of Spans
+func NewTrace(spans []types.Span) *Trace {
+	trace := new(Trace)
+	trace.spans = make(map[SpanID]types.Span)
+	for _, span := range spans {
+		trace.spans[SpanID(span.CoreSpanMetadata.ID)] = span
+	}
+	return trace
+}
+
 // MarshalJSON converts a Trace to a JSON string
 func (t *Trace) MarshalJSON() ([]byte, error) {
 	v := make([]string, len(t.spans))
