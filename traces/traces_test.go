@@ -1,8 +1,10 @@
 package traces
 
 import (
-	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 	"testing"
+	"time"
+
+	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 )
 
 func TestCompleteSpan(t *testing.T) {
@@ -35,5 +37,23 @@ func TestIncompleteSpan(t *testing.T) {
 	}
 	if trace.IsComplete() {
 		t.Errorf("Incomplete span should return false for IsComplete")
+	}
+}
+
+func TestIsOlderThanAbsolute(t *testing.T) {
+	starttime := time.Date(2020, time.January, 8, 9, 0, 0, 0, time.UTC)
+	endtime := time.Date(2020, time.January, 8, 9, 0, 1, 0, time.UTC)
+	trace := new(Trace)
+	trace.spans = make(map[SpanID]types.Span)
+	trace.spans["a"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", DurationMs: 1000}, Timestamp: starttime}
+	trace.spans["b"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", DurationMs: 800}, Timestamp: starttime}
+	if trace.olderThanAbsolute(starttime) {
+		t.Errorf("trace should not be older than the start time")
+	}
+	if trace.olderThanAbsolute(endtime) {
+		t.Errorf("trace should not be older than the end time")
+	}
+	if !trace.olderThanAbsolute(endtime.Add(time.Duration(1E6))) {
+		t.Errorf("trace should be older than the end time plus a millisecond")
 	}
 }

@@ -3,6 +3,7 @@ package traces
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 )
@@ -89,4 +90,26 @@ func (t *Trace) MissingSpans() []SpanID {
 		}
 	}
 	return result
+}
+
+// olderThanAbsolute checks whether the most recently completed span
+// is older than an absolute timestamp
+func (t *Trace) olderThanAbsolute(abstime time.Time) bool {
+	maximum := time.Unix(0, 0)
+	for _, span := range t.spans {
+		timestamp := span.Timestamp
+		duration := span.DurationMs
+		finish := timestamp.Add(time.Duration(int64(duration * 1E6)))
+		if maximum.Before(finish) {
+			maximum = finish
+		}
+	}
+	return maximum.Before(abstime)
+}
+
+// OlderThanRelative checks whether the most recently completed span
+// is older than a duration in milliseconds ago from now
+func (t *Trace) OlderThanRelative(durationMs int64, now time.Time) bool {
+	abstime := now.Add(time.Duration(int64(-durationMs * 1E6)))
+	return t.olderThanAbsolute(abstime)
 }
