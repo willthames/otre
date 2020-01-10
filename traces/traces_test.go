@@ -10,10 +10,10 @@ import (
 func TestCompleteSpan(t *testing.T) {
 	trace := new(Trace)
 	trace.spans = make(map[SpanID]types.Span)
-	trace.spans["root"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}}
-	trace.spans["child"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "child", ParentID: "root"}}
-	trace.spans["grandchild1"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}}
-	trace.spans["grandchild2"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild2", ParentID: "child"}}
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}})
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "child", ParentID: "root"}})
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild2", ParentID: "child"}})
 
 	missingSpans := trace.MissingSpans()
 	if len(missingSpans) != 0 {
@@ -27,9 +27,9 @@ func TestCompleteSpan(t *testing.T) {
 func TestIncompleteSpan(t *testing.T) {
 	trace := new(Trace)
 	trace.spans = make(map[SpanID]types.Span)
-	trace.spans["root"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}}
-	trace.spans["grandchild1"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}}
-	trace.spans["grandchild2"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild2", ParentID: "child"}}
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}})
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild2", ParentID: "child"}})
 
 	missingSpans := trace.MissingSpans()
 	if len(missingSpans) != 1 && missingSpans[0] != "child" {
@@ -45,8 +45,8 @@ func TestIsOlderThanAbsolute(t *testing.T) {
 	endtime := time.Date(2020, time.January, 8, 9, 0, 1, 0, time.UTC)
 	trace := new(Trace)
 	trace.spans = make(map[SpanID]types.Span)
-	trace.spans["a"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", DurationMs: 1000}, Timestamp: starttime}
-	trace.spans["b"] = types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", DurationMs: 800}, Timestamp: starttime}
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", DurationMs: 1000, ID: "a"}, Timestamp: starttime})
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", DurationMs: 800, ID: "b"}, Timestamp: starttime})
 	if trace.olderThanAbsolute(starttime) {
 		t.Errorf("trace should not be older than the start time")
 	}
