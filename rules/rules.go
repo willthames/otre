@@ -20,8 +20,8 @@ type RulesEngine struct {
 // SampleResult expresses the result from the policy of
 // what rule matched and the appropriate sample rate
 type SampleResult struct {
-	sampleRate int    `json:"sampleRate"`
-	reason     string `json:"reason"`
+	SampleRate int    `json:"sampleRate"`
+	Reason     string `json:"reason"`
 }
 
 // NewRulesEngine creates a rules engine with a policy
@@ -42,7 +42,7 @@ func NewRulesEngine(policy string) *RulesEngine {
 
 func (r *RulesEngine) sampleSpans(spans []honey.Span) SampleResult {
 	results, err := r.query.Eval(r.ctx, rego.EvalInput(spans))
-	defaultResult := SampleResult{sampleRate: 100, reason: "Unexpected response, default to accept"}
+	defaultResult := SampleResult{SampleRate: 100, Reason: "Unexpected response, default to accept"}
 
 	if err != nil {
 		logrus.WithError(err).WithField("spans", spans)
@@ -67,24 +67,14 @@ func (r *RulesEngine) sampleSpans(spans []honey.Span) SampleResult {
 		logrus.WithField("spans", spans).WithField("results", results).Warn("Unexpected result returned")
 		return defaultResult
 	}
-	return SampleResult{sampleRate: int(sampleRate), reason: reason}
+	return SampleResult{SampleRate: int(sampleRate), Reason: reason}
 }
 
 // AcceptTrace checks whether trace is accepted by the rules
 // engine or not
-func (r *RulesEngine) AcceptTrace(trace traces.Trace) (decision bool, sample SampleResult) {
+func (r *RulesEngine) AcceptTrace(trace *traces.Trace) (decision bool, sample SampleResult) {
 	spans := trace.Spans()
 	sample = r.sampleSpans(spans)
-	if sample.sampleRate == 0 {
-		decision = false
-		logrus.WithField("reason", sample.reason).WithField("trace", trace).Debug("dropping trace")
-	}
-	if rand.Intn(100) < sample.sampleRate {
-		decision = true
-		logrus.WithField("reason", sample.reason).WithField("rate", sample.sampleRate).WithField("trace", trace).Debug("accepting trace")
-	} else {
-		decision = false
-		logrus.WithField("reason", sample.reason).WithField("rate", sample.sampleRate).WithField("trace", trace).Debug("dropping trace")
-	}
+	decision = (rand.Intn(100) < sample.SampleRate)
 	return
 }
