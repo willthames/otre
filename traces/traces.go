@@ -41,9 +41,8 @@ func (tb *TraceBuffer) addSpan(span types.Span) {
 	trace, ok := tb.traces[traceID]
 	tb.RUnlock()
 	if !ok {
-		trace = NewTrace(traceID, []types.Span{span})
 		tb.Lock()
-		tb.traces[traceID] = trace
+		tb.traces[traceID] = NewTrace(traceID, []types.Span{span})
 		tb.Unlock()
 	} else {
 		trace.addSpan(span)
@@ -67,8 +66,10 @@ func (t *Trace) MarshalJSON() ([]byte, error) {
 	idx := 0
 	t.RLock()
 	defer t.RUnlock()
+	var jsonSpan []byte
+	var err error
 	for _, span := range t.spans {
-		jsonSpan, err := json.Marshal(span)
+		jsonSpan, err = json.Marshal(span)
 		if err != nil {
 			return nil, err
 		}
@@ -100,8 +101,9 @@ func (t *Trace) IsComplete() bool {
 	defer t.RUnlock()
 	for _, span := range t.spans {
 		parentID = SpanID(span.CoreSpanMetadata.ParentID)
+		var ok bool
 		if parentID != "" {
-			_, ok := t.spans[parentID]
+			_, ok = t.spans[parentID]
 			if !ok {
 				return false
 			}
@@ -114,13 +116,14 @@ func (t *Trace) IsComplete() bool {
 // a parent ID of a child span but not present in the trace
 func (t *Trace) MissingSpans() []SpanID {
 	var parentID SpanID
+	var ok bool
 	result := []SpanID{}
 	t.RLock()
 	defer t.RUnlock()
 	for _, span := range t.spans {
 		parentID = SpanID(span.CoreSpanMetadata.ParentID)
 		if parentID != "" {
-			_, ok := t.spans[parentID]
+			_, ok = t.spans[parentID]
 			if !ok {
 				result = append(result, parentID)
 			}
@@ -132,13 +135,15 @@ func (t *Trace) MissingSpans() []SpanID {
 // olderThanAbsolute checks whether the most recently completed span
 // is older than an absolute timestamp
 func (t *Trace) olderThanAbsolute(abstime time.Time) bool {
+	var timestamp, finish time.Time
+	var duration float64
 	maximum := time.Unix(0, 0)
 	t.RLock()
 	defer t.RUnlock()
 	for _, span := range t.spans {
-		timestamp := span.Timestamp
-		duration := span.DurationMs
-		finish := timestamp.Add(time.Duration(int64(duration * 1E6)))
+		timestamp = span.Timestamp
+		duration = span.DurationMs
+		finish = timestamp.Add(time.Duration(int64(duration * 1E6)))
 		if maximum.Before(finish) {
 			maximum = finish
 		}
