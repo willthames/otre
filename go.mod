@@ -13,6 +13,7 @@ require (
 	github.com/facebookgo/structtag v0.0.0-20150214074306-217e25fb9691 // indirect
 	github.com/honeycombio/honeycomb-opentracing-proxy v2.1.0+incompatible
 	github.com/honeycombio/libhoney-go v1.12.2 // indirect
+	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/klauspost/compress v1.9.1 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
 	github.com/sirupsen/logrus v1.4.1

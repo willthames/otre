@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -15,10 +14,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 	v1 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v1"
 	v2 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v2"
-	"github.com/Sirupsen/logrus"
+	"github.com/willthames/otre/rules"
+	"github.com/willthames/otre/traces"
 )
 
 type key int
@@ -36,7 +37,7 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		logrus.WithError(err).Info("Error reading request body")
+		logrus.WithError(err).Error("Error reading request body")
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("error reading request"))
 	}
@@ -58,7 +59,7 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "application/x-thrift":
-		logrus.Info("Receiving data in thrift format")
+		logrus.Debug("Receiving data in thrift format")
 		switch r.URL.Path {
 		case "/api/v1/spans":
 			spans, err = v1.DecodeThrift(bytes.NewReader(data))
@@ -71,28 +72,24 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		logrus.WithField("contentType", contentType).Info("unknown content type")
+		logrus.WithField("contentType", contentType).Error("unknown content type")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("unknown content type"))
 		return
 	}
 	if err != nil {
-		logrus.WithError(err).WithField("type", contentType).Info("error unmarshaling spans")
+		logrus.WithError(err).WithField("type", contentType).Error("error unmarshaling spans")
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("error unmarshaling span data"))
 		return
 	}
-	var opa_data []byte
-	for _, span := range spans {
-		opa_data, err = json.Marshal(span)
-		if err != nil {
-			logrus.WithError(err).WithField("span", span).Info("error marshaling span")
-		} else {
-			logrus.WithField("span", string(opa_data)).Info("Accepted span")
-		}
-	}
 
 	w.WriteHeader(http.StatusAccepted)
+	for spanID, span := range spans {
+		logrus.WithField("spanID", spanID).Debug("Adding span to tracebuffer")
+		a.traceBuffer.AddSpan(*span)
+		logrus.WithField("spanID", spanID).Debug("Finished adding span to tracebuffer")
+	}
 }
 
 // ungzipWrap wraps a handleFunc and transparently ungzips the body of the
@@ -104,7 +101,7 @@ func ungzipWrap(hf func(http.ResponseWriter, *http.Request)) func(http.ResponseW
 		if isGzipped == "gzip" {
 			buf := bytes.Buffer{}
 			if _, err := io.Copy(&buf, r.Body); err != nil {
-				logrus.WithError(err).Info("error allocating buffer for ungzipping")
+				logrus.WithError(err).Error("error allocating buffer for ungzipping")
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("error allocating buffer for ungzipping"))
 				return
@@ -112,7 +109,7 @@ func ungzipWrap(hf func(http.ResponseWriter, *http.Request)) func(http.ResponseW
 			var err error
 			newBody, err = gzip.NewReader(&buf)
 			if err != nil {
-				logrus.WithError(err).Info("error ungzipping span data")
+				logrus.WithError(err).Error("error ungzipping span data")
 				w.WriteHeader(http.StatusBadRequest)
 				w.Write([]byte("error ungzipping span data"))
 				return
@@ -132,12 +129,14 @@ func (a *app) start() error {
 	mux.HandleFunc("/", http.NotFoundHandler().ServeHTTP)
 
 	a.server = &http.Server{
-		Addr:     ":" + a.Port,
+		Addr:     fmt.Sprintf(":%d", a.port),
 		Handler:  logging(logger)(mux),
 		ErrorLog: logger,
 	}
 	go a.server.ListenAndServe()
-	logrus.WithField("port", a.Port).Info("Listening")
+	logrus.WithField("port", a.port).Info("Listening")
+	ticker := time.NewTicker(a.flushAge)
+	go a.scheduler(ticker)
 	return nil
 }
 
@@ -162,9 +161,98 @@ func (a *app) stop() error {
 	return a.server.Shutdown(ctx)
 }
 
+func (a *app) scheduler(tick *time.Ticker) {
+	for {
+		select {
+		case <-tick.C:
+			a.processSpans()
+		}
+	}
+}
+
+func (a *app) writeTrace(trace *traces.Trace, sampleResult rules.SampleResult) error {
+	body, err := trace.MarshalJSON()
+	if err != nil {
+		logrus.WithError(err).WithField("trace", trace).Error("Error converting trace to JSON")
+		return err
+	}
+	if a.forwarder != nil {
+		if err := a.forwarder.Send(payload{ContentType: "application/json", Body: body}); err != nil {
+			logrus.WithError(err).Error("Error forwarding trace")
+			return err
+		}
+		logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Debug("accepting trace")
+	} else {
+		logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Info("dry-run: would have accepted trace")
+	}
+	return nil
+}
+
+func (a *app) processSpans() {
+	var decision bool
+	var sampleResult rules.SampleResult
+	var traceID traces.TraceID
+	var trace *traces.Trace
+
+	logrus.Debug("processSpans: RLocking tracebuffer")
+	deletions := []traces.TraceID{}
+	now := time.Now()
+	a.traceBuffer.RLock()
+	for traceID, trace = range a.traceBuffer.Traces {
+		if trace.IsComplete() && trace.OlderThanRelative(a.flushAge, now) {
+			decision, sampleResult = a.re.AcceptTrace(trace)
+			if decision {
+				trace.AddTag("SampleReason", sampleResult.Reason)
+				trace.AddTag("SampleRate", string(sampleResult.SampleRate))
+				err := a.writeTrace(trace, sampleResult)
+				if err != nil {
+					deletions = append(deletions, traceID)
+				}
+			} else {
+				logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Debug("dropping trace")
+			}
+		} else if trace.OlderThanRelative(a.abandonAge, now) {
+			trace.AddTag("SampleReason", fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge))
+			err := a.writeTrace(trace, sampleResult)
+			if err != nil {
+				deletions = append(deletions, traceID)
+			}
+		}
+	}
+	logrus.Debug("processSpans: RUnlocking tracebuffer")
+
+	a.traceBuffer.RUnlock()
+	logrus.Debug("processSpans: Locking tracebuffer")
+	a.traceBuffer.Lock()
+	for _, traceID = range deletions {
+		delete(a.traceBuffer.Traces, traceID)
+	}
+	logrus.Debug("processSpans: Unlocking tracebuffer")
+	a.traceBuffer.Unlock()
+}
+
 func main() {
+
 	a := cliParse()
-	err := a.start()
+	level, err := logrus.ParseLevel(a.logLevel)
+	if err != nil {
+		logrus.WithField("logLevel", a.LogLevel).Warn("Couldn't parse log level - defaulting to Info")
+		logrus.SetLevel(logrus.InfoLevel)
+	} else {
+		logrus.SetLevel(level)
+	}
+	if a.collectorURL != "" {
+		a.forwarder, err = NewForwarder(a.collectorURL)
+		if err != nil {
+			fmt.Printf("%v", err)
+			os.Exit(1)
+		}
+		a.forwarder.Start()
+		defer a.forwarder.Stop()
+	} else {
+		a.forwarder = nil
+	}
+	err = a.start()
 	if err != nil {
 		fmt.Printf("Error starting app: %v\n", err)
 		os.Exit(1)

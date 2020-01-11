@@ -1,4 +1,9 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: otre-files-config
@@ -136,9 +141,50 @@ data:
     }
 ---
 apiVersion: v1
-kind: Namespace
+kind: ConfigMap
 metadata:
-  name: monitoring
+  name: policy-rego
+  namespace: monitoring
+data:
+  policy.rego: |
+    package otre
+
+    default url = ""
+    default status = 0
+
+    ping[span] {
+      span := input[_]
+      url :=  input[_].binaryAnnotations["http.url"]
+      endswith(url, "/ping")
+    }
+
+    api_new_service[span] {
+      span := input[_]
+      url :=  input[_].binaryAnnotations["http.url"]
+      contains(url, "/api/newService")
+    }
+
+    error_response[span] {
+      span := input[_]
+      status := to_number(span.binaryAnnotations["http.status_code"])
+      status >= 500
+    }
+
+    response = {"sampleRate": 0, "reason": msg} {
+      some span
+      ping[span]
+      msg := "URL ending /ping is a ping URL"
+    } else = {"sampleRate": 100, "reason": msg} {
+      some span
+      api_new_service[span]
+      msg := "URL is for the new service with 100% sampling"
+    } else = {"sampleRate": 100, "reason": msg} {
+      some span
+      error_response[span]
+      msg := sprintf("Status code %v >= 500", [status])
+    }  else = {"sampleRate": 25, "reason": "fallback sample rate"} {
+      true
+    }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -160,13 +206,19 @@ spec:
         app: otre
     spec:
         containers:
-          - image: willthames/otre:0.1.7
+          - image: willthames/otre:0.1.8
             name: otre
             command:
               - /go/bin/otre
             args:
               - --port
               - "9410"
+              - --policy-file
+              - /otre/policy.rego
+              - --flush-age
+              - "60000"
+              - --log-level
+              - Debug
           - name: nginx-sidecar
             command:
               - nginx
@@ -188,10 +240,15 @@ spec:
               - name: otre-files-config
                 mountPath: /etc/nginx/nginx.conf
                 subPath: nginx.conf
+              - name: otre-files-config
+                mountPath: /otre
         volumes:
           - name: otre-files-config
             configMap:
               name: otre-files-config
+          - name: policy-rego
+            configMap:
+              name: policy-rego
 ---
 apiVersion: v1
 kind: Service

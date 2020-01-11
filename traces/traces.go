@@ -2,6 +2,7 @@ package traces
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ type Trace struct {
 	traceID TraceID
 	spans   map[SpanID]types.Span
 	sync.RWMutex
+	version string
 }
 
 func (t *Trace) addSpan(span types.Span) {
@@ -31,18 +33,20 @@ func (t *Trace) addSpan(span types.Span) {
 
 // TraceBuffer is a mapping of TraceIDs to Traces
 type TraceBuffer struct {
-	traces map[TraceID]*Trace
+	Traces map[TraceID]*Trace
 	sync.RWMutex
 }
 
-func (tb *TraceBuffer) addSpan(span types.Span) {
+// AddSpan adds a span to a TraceBuffer, creating
+// a new trace if the trace isn't yet in the TraceBuffer
+func (tb *TraceBuffer) AddSpan(span types.Span) {
 	traceID := TraceID(span.TraceID)
 	tb.RLock()
-	trace, ok := tb.traces[traceID]
+	trace, ok := tb.Traces[traceID]
 	tb.RUnlock()
 	if !ok {
 		tb.Lock()
-		tb.traces[traceID] = NewTrace(traceID, []types.Span{span})
+		tb.Traces[traceID] = NewTrace(traceID, []types.Span{span})
 		tb.Unlock()
 	} else {
 		trace.addSpan(span)
@@ -152,8 +156,31 @@ func (t *Trace) olderThanAbsolute(abstime time.Time) bool {
 }
 
 // OlderThanRelative checks whether the most recently completed span
-// is older than a duration in milliseconds ago from now
-func (t *Trace) OlderThanRelative(durationMs int64, now time.Time) bool {
-	abstime := now.Add(time.Duration(int64(-durationMs * 1E6)))
+// is older than a time.Duration ago from now
+func (t *Trace) OlderThanRelative(duration time.Duration, now time.Time) bool {
+	abstime := now.Add(-duration)
 	return t.olderThanAbsolute(abstime)
+}
+
+func (t *Trace) rootSpanID() (SpanID, error) {
+	var parentID SpanID
+	t.RLock()
+	defer t.RUnlock()
+	for spanID, span := range t.spans {
+		parentID = SpanID(span.CoreSpanMetadata.ParentID)
+		if parentID == "" {
+			return spanID, nil
+		}
+	}
+	return "", fmt.Errorf("Couldn't find root span")
+}
+
+// AddTag adds a key-value binary annotation to a trace
+func (t *Trace) AddTag(key string, value string) error {
+	rootSpanID, err := t.rootSpanID()
+	if err != nil {
+		return err
+	}
+	t.spans[rootSpanID].BinaryAnnotations[key] = value
+	return nil
 }

@@ -57,3 +57,21 @@ func TestIsOlderThanAbsolute(t *testing.T) {
 		t.Errorf("trace should be older than the end time plus a millisecond")
 	}
 }
+
+func TestParentSpanID(t *testing.T) {
+	trace := new(Trace)
+	trace.spans = make(map[SpanID]types.Span)
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild2", ParentID: "child"}})
+
+	rootSpanID, err := trace.rootSpanID()
+	if err == nil || rootSpanID != "" {
+		t.Errorf("Trace missing root span should return error for rootSpanID()")
+	}
+
+	trace.addSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}})
+	rootSpanID, err = trace.rootSpanID()
+	if err != nil || rootSpanID == "" {
+		t.Errorf("rootSpanID() should return a root span ID and no error")
+	}
+}
