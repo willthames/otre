@@ -236,11 +236,12 @@ func main() {
 	a := cliParse()
 	level, err := logrus.ParseLevel(a.logLevel)
 	if err != nil {
-		logrus.WithField("logLevel", a.LogLevel).Warn("Couldn't parse log level - defaulting to Info")
+		logrus.WithField("logLevel", a.logLevel).Warn("Couldn't parse log level - defaulting to Info")
 		logrus.SetLevel(logrus.InfoLevel)
 	} else {
 		logrus.SetLevel(level)
 	}
+	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 	if a.collectorURL != "" {
 		a.forwarder, err = NewForwarder(a.collectorURL)
 		if err != nil {

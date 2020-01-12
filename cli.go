@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"github.com/Sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -11,15 +12,15 @@ import (
 )
 
 type app struct {
-	port          int
-	server        *http.Server
-	flushAge      time.Duration
-	abandonAge    time.Duration
-	collectorURL  string
-	traceBuffer   traces.TraceBuffer
-	re            rules.RulesEngine
-	forwarder     *Forwarder
-	logLevel      string
+	port         int
+	server       *http.Server
+	flushAge     time.Duration
+	abandonAge   time.Duration
+	collectorURL string
+	traceBuffer  *traces.TraceBuffer
+	re           rules.RulesEngine
+	forwarder    *Forwarder
+	logLevel     string
 }
 
 func cliParse() *app {
@@ -28,21 +29,25 @@ func cliParse() *app {
 	abandonAge := flag.Int("abandon-age", 300000, "Age in ms after which incomplete trace is flushed")
 	collectorURL := flag.String("collector-url", "", "Host to forward traces. Not setting this will work as dry run")
 	policyFile := flag.String("policy-file", "", "policy definition file")
-	policyFile := flag.String("log-level", "Info", "log level")
+	logLevel := flag.String("log-level", "Info", "log level")
 
+	flag.Parse()
+
+	if *policyFile == "" {
+		logrus.Fatal("--policy-file argument is mandatory")
+	}
 	policy, err := ioutil.ReadFile(*policyFile)
 	if err != nil {
 		panic(err)
 	}
-	flag.Parse()
 	a := &app{
-		port:          *port,
-		flushAge:      time.Duration(int64(*flushAge * 1E6)),
-		abandonAge:    time.Duration(int64(*abandonAge * 1E6)),
-		collectorURL:  *collectorURL,
-		logLevel:      *logLevel,
-		traceBuffer:   *new(traces.TraceBuffer),
-		re:            *rules.NewRulesEngine(string(policy)),
+		port:         *port,
+		flushAge:     time.Duration(int64(*flushAge * 1E6)),
+		abandonAge:   time.Duration(int64(*abandonAge * 1E6)),
+		collectorURL: *collectorURL,
+		logLevel:     *logLevel,
+		traceBuffer:  traces.NewTraceBuffer(),
+		re:           *rules.NewRulesEngine(string(policy)),
 	}
 	return a
 }

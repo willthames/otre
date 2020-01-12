@@ -68,7 +68,7 @@ data:
             '$time_date_time.$time_millis$time_zone $remote_addr $realip_remote_addr $req_id $request_method $best_http_host$request_uri $server_protocol $status $bytes_sent $request_time "$http_referer" "$http_user_agent" $proxy_upstream_name $upstream_response_time $upstream_status';
 
         access_log /dev/stdout main;
-        error_log /dev/stdout info;
+        error_log /dev/stdout warn;
 
         map $msec $time_millis {
            ~[0-9]+\.(?P<millis>[0-9][0-9][0-9]) $millis;
@@ -206,7 +206,7 @@ spec:
         app: otre
     spec:
         containers:
-          - image: willthames/otre:0.1.8
+          - image: willthames/otre:0.1.9
             name: otre
             command:
               - /go/bin/otre
@@ -219,6 +219,9 @@ spec:
               - "60000"
               - --log-level
               - Debug
+            volumeMounts:
+              - name: policy-rego
+                mountPath: /otre
           - name: nginx-sidecar
             command:
               - nginx
@@ -240,8 +243,6 @@ spec:
               - name: otre-files-config
                 mountPath: /etc/nginx/nginx.conf
                 subPath: nginx.conf
-              - name: otre-files-config
-                mountPath: /otre
         volumes:
           - name: otre-files-config
             configMap:

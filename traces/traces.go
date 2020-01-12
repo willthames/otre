@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 )
 
@@ -26,8 +27,10 @@ type Trace struct {
 
 func (t *Trace) addSpan(span types.Span) {
 	spanID := SpanID(span.ID)
+	logrus.WithField("SpanID", spanID).Debug("Locking trace")
 	t.Lock()
 	t.spans[spanID] = span
+	logrus.WithField("SpanID", spanID).Debug("Unocking trace")
 	t.Unlock()
 }
 
@@ -37,16 +40,27 @@ type TraceBuffer struct {
 	sync.RWMutex
 }
 
+// NewTraceBuffer creates a new TraceBuffer
+func NewTraceBuffer() *TraceBuffer {
+	traceBuffer := new(TraceBuffer)
+	traceBuffer.Traces = make(map[TraceID]*Trace)
+	return traceBuffer
+}
+
 // AddSpan adds a span to a TraceBuffer, creating
 // a new trace if the trace isn't yet in the TraceBuffer
 func (tb *TraceBuffer) AddSpan(span types.Span) {
 	traceID := TraceID(span.TraceID)
+	logrus.WithField("TraceID", traceID).Debug("RLocking TraceBuffer")
 	tb.RLock()
 	trace, ok := tb.Traces[traceID]
+	logrus.WithField("TraceID", traceID).Debug("RUnlocking TraceBuffer")
 	tb.RUnlock()
 	if !ok {
+		logrus.WithField("TraceID", traceID).Debug("Locking TraceBuffer")
 		tb.Lock()
 		tb.Traces[traceID] = NewTrace(traceID, []types.Span{span})
+		logrus.WithField("TraceID", traceID).Debug("Unlocking TraceBuffer")
 		tb.Unlock()
 	} else {
 		trace.addSpan(span)
