@@ -75,3 +75,8 @@ func TestParentSpanID(t *testing.T) {
 		t.Errorf("rootSpanID() should return a root span ID and no error")
 	}
 }
+
+func TestTraceBuffer(t *testing.T) {
+	traceBuffer := NewTraceBuffer()
+	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+}

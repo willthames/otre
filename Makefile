@@ -1,5 +1,5 @@
-VERSION = ${shell(git describe --long)}
+VERSION := $(shell git describe --long)
 image:
 	docker build -t willthames/otre:${VERSION} .
-push:
+push: image
 	docker push willthames/otre:${VERSION}

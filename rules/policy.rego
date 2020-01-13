@@ -32,7 +32,7 @@ response = {"sampleRate": 0, "reason": msg} {
 } else = {"sampleRate": 100, "reason": msg} {
   some span
   error_response[span]
-  msg := sprintf("Status code %v >= 500", [status])
+  msg := sprintf("Status code %v >= 500", span.binaryAnnotations["http.status_code"])
 }  else = {"sampleRate": 25, "reason": "fallback sample rate"} {
   true
 }
