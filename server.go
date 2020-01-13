@@ -85,10 +85,10 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
-	for spanID, span := range spans {
-		logrus.WithField("spanID", spanID).Debug("Adding span to tracebuffer")
+	for _, span := range spans {
+		logrus.WithField("spanID", span.ID).Debug("Adding span to tracebuffer")
 		a.traceBuffer.AddSpan(*span)
-		logrus.WithField("spanID", spanID).Debug("Finished adding span to tracebuffer")
+		logrus.WithField("spanID", span.ID).Debug("Finished adding span to tracebuffer")
 	}
 }
 
@@ -121,6 +121,13 @@ func ungzipWrap(hf func(http.ResponseWriter, *http.Request)) func(http.ResponseW
 }
 
 func (a *app) start() error {
+	outputLines := [5]string{
+		`       _`,
+		`  ___ | |_ _ __ ___`,
+		` / _ \| __| '__/ _ \`,
+		`| (_) | |_| | |  __/`,
+		` \___/ \__|_|  \___|`,
+	}
 	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
 
 	mux := http.NewServeMux()
@@ -134,6 +141,9 @@ func (a *app) start() error {
 		ErrorLog: logger,
 	}
 	go a.server.ListenAndServe()
+	for _, line := range outputLines {
+		fmt.Println(line)
+	}
 	logrus.WithField("port", a.port).Info("Listening")
 	ticker := time.NewTicker(a.flushAge)
 	go a.scheduler(ticker)
@@ -179,6 +189,7 @@ func (a *app) writeTrace(trace *traces.Trace, sampleResult rules.SampleResult) e
 	if a.forwarder != nil {
 		if err := a.forwarder.Send(payload{ContentType: "application/json", Body: body}); err != nil {
 			logrus.WithError(err).Error("Error forwarding trace")
+			logrus.WithField("body", body).Debug("Error forwarding trace body")
 			return err
 		}
 		logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Debug("accepting trace")
@@ -203,7 +214,7 @@ func (a *app) processSpans() {
 			decision, sampleResult = a.re.AcceptTrace(trace)
 			if decision {
 				trace.AddTag("SampleReason", sampleResult.Reason)
-				trace.AddTag("SampleRate", string(sampleResult.SampleRate))
+				trace.AddTag("SampleRate", fmt.Sprintf("%d", sampleResult.SampleRate))
 				err := a.writeTrace(trace, sampleResult)
 				if err != nil {
 					deletions = append(deletions, traceID)
@@ -243,6 +254,7 @@ func main() {
 	}
 	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 	if a.collectorURL != "" {
+		logrus.WithField("collectorURL", a.collectorURL).Debug("Creating trace forwarder")
 		a.forwarder, err = NewForwarder(a.collectorURL)
 		if err != nil {
 			fmt.Printf("%v", err)

@@ -206,7 +206,7 @@ spec:
         app: otre
     spec:
         containers:
-          - image: willthames/otre:v0.2-0-g4426425
+          - image: willthames/otre:v0.2-2-g8f3bd65
             name: otre
             command:
               - /go/bin/otre
@@ -219,6 +219,8 @@ spec:
               - "60000"
               - --log-level
               - Debug
+              - --collector-url
+              - http://zipkin:9411
             volumeMounts:
               - name: policy-rego
                 mountPath: /otre
