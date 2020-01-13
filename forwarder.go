@@ -77,6 +77,7 @@ func (f *Forwarder) runWorker() {
 			logrus.WithField("status", resp.Status).
 				WithField("response", string(responseBody)).
 				Info("Error response sending payload downstream")
+			logrus.WithField("payload", string(p.Body)).Debug("Error response sending payload downstream")
 		}
 	}
 	f.wg.Done()

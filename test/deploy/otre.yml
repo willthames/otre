@@ -181,7 +181,7 @@ data:
     } else = {"sampleRate": 100, "reason": msg} {
       some span
       error_response[span]
-      msg := sprintf("Status code %v >= 500", span.binaryAnnotations["http.status_code"])
+      msg := "Status code >= 500"
     }  else = {"sampleRate": 25, "reason": "fallback sample rate"} {
       true
     }
@@ -206,7 +206,7 @@ spec:
         app: otre
     spec:
         containers:
-          - image: willthames/otre:v0.2-2-g0f148eb
+          - image: willthames/otre:v0.2-4-gd7e09bf
             name: otre
             command:
               - /go/bin/otre
