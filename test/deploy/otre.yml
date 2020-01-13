@@ -206,7 +206,7 @@ spec:
         app: otre
     spec:
         containers:
-          - image: willthames/otre:v0.2-2-g8f3bd65
+          - image: willthames/otre:v0.2-2-g0f148eb
             name: otre
             command:
               - /go/bin/otre
