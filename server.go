@@ -213,8 +213,8 @@ func (a *app) processSpans() {
 		if trace.IsComplete() && trace.OlderThanRelative(a.flushAge, now) {
 			decision, sampleResult = a.re.AcceptTrace(trace)
 			if decision {
-				trace.AddTag("SampleReason", sampleResult.Reason)
-				trace.AddTag("SampleRate", fmt.Sprintf("%d", sampleResult.SampleRate))
+				trace.AddStringTag("SampleReason", sampleResult.Reason)
+				trace.AddIntTag("SampleRate", sampleResult.SampleRate)
 				err := a.writeTrace(trace, sampleResult)
 				if err != nil {
 					deletions = append(deletions, traceID)
@@ -223,7 +223,7 @@ func (a *app) processSpans() {
 				logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Debug("dropping trace")
 			}
 		} else if trace.OlderThanRelative(a.abandonAge, now) {
-			trace.AddTag("SampleReason", fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge))
+			trace.AddStringTag("SampleReason", fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge))
 			err := a.writeTrace(trace, sampleResult)
 			if err != nil {
 				deletions = append(deletions, traceID)

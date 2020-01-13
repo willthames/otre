@@ -27,10 +27,10 @@ type Trace struct {
 
 func (t *Trace) addSpan(span types.Span) {
 	spanID := SpanID(span.ID)
-	logrus.WithField("SpanID", spanID).Debug("Locking trace")
+	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Locking trace")
 	t.Lock()
 	t.spans[spanID] = span
-	logrus.WithField("SpanID", spanID).Debug("Unocking trace")
+	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Unlocking trace")
 	t.Unlock()
 }
 
@@ -189,8 +189,18 @@ func (t *Trace) rootSpanID() (SpanID, error) {
 	return "", fmt.Errorf("Couldn't find root span")
 }
 
-// AddTag adds a key-value binary annotation to a trace
-func (t *Trace) AddTag(key string, value string) error {
+// AddStringTag adds a key-value binary annotation to a trace
+func (t *Trace) AddStringTag(key string, value string) error {
+	rootSpanID, err := t.rootSpanID()
+	if err != nil {
+		return err
+	}
+	t.spans[rootSpanID].BinaryAnnotations[key] = value
+	return nil
+}
+
+// AddIntTag adds a key-value binary annotation to a trace
+func (t *Trace) AddIntTag(key string, value int) error {
 	rootSpanID, err := t.rootSpanID()
 	if err != nil {
 		return err
