@@ -206,7 +206,7 @@ spec:
         app: otre
     spec:
         containers:
-          - image: willthames/otre:v0.2-4-ga2a7d1b
+          - image: willthames/otre:v0.2-5-gfcd2707
             name: otre
             command:
               - /go/bin/otre
@@ -216,7 +216,7 @@ spec:
               - --policy-file
               - /otre/policy.rego
               - --flush-age
-              - "60000"
+              - "20000"
               - --log-level
               - Debug
               - --collector-url

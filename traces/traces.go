@@ -9,6 +9,8 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // SpanID is an ID for a span
@@ -25,11 +27,23 @@ type Trace struct {
 	version string
 }
 
+var (
+	tracesInBuffer = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "otre_traces_in_buffer",
+		Help: "The number of traces currently in the buffer",
+	})
+	spansInBuffer = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "otre_spans_in_buffer",
+		Help: "The number of spans currently in the buffer",
+	})
+)
+
 func (t *Trace) addSpan(span types.Span) {
 	spanID := SpanID(span.ID)
 	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Locking trace")
 	t.Lock()
 	t.spans[spanID] = span
+	spansInBuffer.Inc()
 	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Unlocking trace")
 	t.Unlock()
 }
@@ -60,11 +74,33 @@ func (tb *TraceBuffer) AddSpan(span types.Span) {
 		logrus.WithField("TraceID", traceID).Debug("Locking TraceBuffer")
 		tb.Lock()
 		tb.Traces[traceID] = NewTrace(traceID, []types.Span{span})
+		tracesInBuffer.Inc()
+		spansInBuffer.Inc()
 		logrus.WithField("TraceID", traceID).Debug("Unlocking TraceBuffer")
 		tb.Unlock()
 	} else {
 		trace.addSpan(span)
+		spansInBuffer.Inc()
 	}
+}
+
+// DeleteTrace deletes a trace from the trace buffer
+func (tb *TraceBuffer) DeleteTrace(traceID TraceID) {
+	tb.RLock()
+	trace := tb.Traces[traceID]
+	tb.RUnlock()
+	spans := trace.Spans()
+	for _, span := range spans {
+		spanID := SpanID(span.ID)
+		trace.Lock()
+		delete(trace.spans, spanID)
+		trace.Unlock()
+		spansInBuffer.Dec()
+	}
+	tb.Lock()
+	delete(tb.Traces, traceID)
+	tb.Unlock()
+	tracesInBuffer.Dec()
 }
 
 // NewTrace creates a Trace object from a list of Spans

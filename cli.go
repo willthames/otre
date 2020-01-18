@@ -13,6 +13,7 @@ import (
 
 type app struct {
 	port         int
+	metricsPort  int
 	server       *http.Server
 	flushAge     time.Duration
 	abandonAge   time.Duration
@@ -25,6 +26,7 @@ type app struct {
 
 func cliParse() *app {
 	port := flag.Int("port", 8080, "server port")
+	metricsPort := flag.Int("metrics-port", 10010, "prometheus /metrics port")
 	flushAge := flag.Int("flush-age", 30000, "Interval in ms between trace flushes")
 	abandonAge := flag.Int("abandon-age", 300000, "Age in ms after which incomplete trace is flushed")
 	collectorURL := flag.String("collector-url", "", "Host to forward traces. Not setting this will work as dry run")
@@ -42,6 +44,7 @@ func cliParse() *app {
 	}
 	a := &app{
 		port:         *port,
+		metricsPort:  *metricsPort,
 		flushAge:     time.Duration(int64(*flushAge * 1E6)),
 		abandonAge:   time.Duration(int64(*abandonAge * 1E6)),
 		collectorURL: *collectorURL,

@@ -18,6 +18,7 @@ import (
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 	v1 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v1"
 	v2 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v2"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/willthames/otre/rules"
 	"github.com/willthames/otre/traces"
 )
@@ -236,7 +237,7 @@ func (a *app) processSpans() {
 	logrus.Debug("processSpans: Locking tracebuffer")
 	a.traceBuffer.Lock()
 	for _, traceID = range deletions {
-		delete(a.traceBuffer.Traces, traceID)
+		a.traceBuffer.DeleteTrace(traceID)
 	}
 	logrus.Debug("processSpans: Unlocking tracebuffer")
 	a.traceBuffer.Unlock()
@@ -270,6 +271,8 @@ func main() {
 		fmt.Printf("Error starting app: %v\n", err)
 		os.Exit(1)
 	}
+	http.Handle("/metrics", promhttp.Handler())
+	http.ListenAndServe(fmt.Sprintf(":%d", a.metricsPort), nil)
 	defer a.stop()
 	waitForSignal()
 }

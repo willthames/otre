@@ -79,4 +79,9 @@ func TestParentSpanID(t *testing.T) {
 func TestTraceBuffer(t *testing.T) {
 	traceBuffer := NewTraceBuffer()
 	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}})
+	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "child", ParentID: "root"}})
+	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild2", ParentID: "child"}})
+	traceBuffer.DeleteTrace(TraceID("trace"))
 }

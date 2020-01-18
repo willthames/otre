@@ -16,6 +16,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/klauspost/compress v1.9.1 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
+	github.com/prometheus/client_golang v0.0.0-20181025174421-f30f42803563
 	github.com/sirupsen/logrus v1.4.1
 	github.com/uber/jaeger v1.15.1 // indirect
 	github.com/uber/tchannel-go v1.16.0 // indirect
