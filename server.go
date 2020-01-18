@@ -18,6 +18,8 @@ import (
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 	v1 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v1"
 	v2 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v2"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/willthames/otre/rules"
 	"github.com/willthames/otre/traces"
@@ -27,6 +29,21 @@ type key int
 
 const (
 	requestIDKey key = 0
+)
+
+var (
+	incompleteTraces = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "otre_traces_incomplete_total",
+		Help: "The total number of incomplete traces",
+	})
+	acceptedTraces = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "otre_traces_accepted_total",
+		Help: "The total number of accepted traces",
+	})
+	rejectedTraces = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "otre_traces_rejected_total",
+		Help: "The total number of rejected traces",
+	})
 )
 
 // handleSpans handles the /api/v1/spans POST endpoint. It decodes the request
@@ -138,7 +155,7 @@ func (a *app) start() error {
 
 	a.server = &http.Server{
 		Addr:     fmt.Sprintf(":%d", a.port),
-		Handler:  logging(logger)(mux),
+		Handler:  prometheus.InstrumentHandler("otre", logging(logger)(mux)),
 		ErrorLog: logger,
 	}
 	go a.server.ListenAndServe()
@@ -219,15 +236,18 @@ func (a *app) processSpans() {
 				err := a.writeTrace(trace, sampleResult)
 				if err != nil {
 					deletions = append(deletions, traceID)
+					acceptedTraces.Inc()
 				}
 			} else {
 				logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Debug("dropping trace")
+				rejectedTraces.Inc()
 			}
 		} else if trace.OlderThanRelative(a.abandonAge, now) {
 			trace.AddStringTag("SampleReason", fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge))
 			err := a.writeTrace(trace, sampleResult)
 			if err != nil {
 				deletions = append(deletions, traceID)
+				incompleteTraces.Inc()
 			}
 		}
 	}
@@ -271,6 +291,10 @@ func main() {
 		fmt.Printf("Error starting app: %v\n", err)
 		os.Exit(1)
 	}
+	prometheus.Register(incompleteTraces)
+	prometheus.Register(acceptedTraces)
+	prometheus.Register(rejectedTraces)
+
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(fmt.Sprintf(":%d", a.metricsPort), nil)
 	defer a.stop()

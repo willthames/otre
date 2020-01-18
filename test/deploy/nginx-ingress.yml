@@ -246,3 +246,4 @@ spec:
   # traffic to.
   selector:
     app: nginx-ingress
+  type: NodePort

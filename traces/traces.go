@@ -244,3 +244,8 @@ func (t *Trace) AddIntTag(key string, value int) error {
 	t.spans[rootSpanID].BinaryAnnotations[key] = value
 	return nil
 }
+
+func init() {
+	prometheus.Register(spansInBuffer)
+	prometheus.Register(tracesInBuffer)
+}

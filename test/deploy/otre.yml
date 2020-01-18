@@ -204,9 +204,12 @@ spec:
     metadata:
       labels:
         app: otre
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "10010"
     spec:
         containers:
-          - image: willthames/otre:v0.2-5-gfcd2707
+          - image: willthames/otre:v0.2-7-g1a0ff28
             name: otre
             command:
               - /go/bin/otre
@@ -272,3 +275,4 @@ spec:
       targetPort: 9410
   selector:
     app: otre
+  type: NodePort
