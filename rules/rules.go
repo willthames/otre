@@ -39,9 +39,9 @@ func NewRulesEngine(policy string) *RulesEngine {
 	return r
 }
 
-func (r *RulesEngine) sampleSpans(spans []honey.Span) SampleResult {
+func (r *RulesEngine) sampleSpans(spans []honey.Span) *SampleResult {
 	results, err := r.query.Eval(r.ctx, rego.EvalInput(spans))
-	defaultResult := SampleResult{SampleRate: 100, Reason: "Unexpected response, default to accept"}
+	defaultResult := &SampleResult{SampleRate: 100, Reason: "Unexpected response, default to accept"}
 
 	if err != nil {
 		logrus.WithError(err).WithField("spans", spans)
@@ -66,12 +66,12 @@ func (r *RulesEngine) sampleSpans(spans []honey.Span) SampleResult {
 		logrus.WithField("spans", spans).WithField("results", results).Warn("Unexpected result returned")
 		return defaultResult
 	}
-	return SampleResult{SampleRate: int(sampleRate), Reason: reason}
+	return &SampleResult{SampleRate: int(sampleRate), Reason: reason}
 }
 
 // AcceptSpans checks whether a set of spans is accepted by the rules
 // engine or not
-func (r *RulesEngine) AcceptSpans(spans []honey.Span) (decision bool, sample SampleResult) {
+func (r *RulesEngine) AcceptSpans(spans []honey.Span) (decision bool, sample *SampleResult) {
 	sample = r.sampleSpans(spans)
 	decision = (rand.Intn(100) < sample.SampleRate)
 	return

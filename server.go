@@ -263,7 +263,7 @@ func (a *app) processSpans() {
 					}
 				}
 			}
-			trace.SampleDecision, *trace.SampleResult = a.re.AcceptSpans(trace.Spans())
+			trace.SampleDecision, trace.SampleResult = a.re.AcceptSpans(trace.Spans())
 			if decision {
 				trace.AddStringTag("SampleReason", trace.SampleResult.Reason)
 				trace.AddIntTag("SampleRate", trace.SampleResult.SampleRate)
