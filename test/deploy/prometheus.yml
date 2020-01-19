@@ -4,6 +4,34 @@ metadata:
   name: monitoring
 ---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+- kind: ServiceAccount
+  name: prometheus
+  namespace: monitoring
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prometheus
@@ -41,6 +69,40 @@ data:
 
         static_configs:
         - targets: ['localhost:9090']
+      - job_name: 'kubernetes-pods'
+
+        kubernetes_sd_configs:
+        - role: pod
+
+        relabel_configs:
+        # relabel to scrape only pods that have
+        # "prometheus.io/scrapse = true" annotation.
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        # relabel to customize metric path based on pod
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        # relabel to scrape only single, desired port for the pod
+        # based on pod "prometheus.io/port = <port>" annotation.
+        # Note that __address__ is modified here, so if pod containers' ports
+        # are declared, they all will be ignored.
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -61,9 +123,15 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccount: prometheus
       containers:
         - image: prom/prometheus
           name: prometheus
+          args:
+            - --config.file
+            - /etc/prometheus/prometheus.yml
+            - --log.level
+            - debug
           ports:
             - containerPort: 9090
               protocol: TCP

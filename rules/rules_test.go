@@ -2,7 +2,6 @@ package rules
 
 import (
 	"encoding/json"
-	"github.com/willthames/otre/traces"
 	"io/ioutil"
 	"math/rand"
 	"path"
@@ -63,8 +62,7 @@ func TestAcceptTrace(t *testing.T) {
 	// Seed 1 has 25, the critical edge case, in the first 8 values
 	rand.Seed(1)
 	for i := 0; i < 8; i++ {
-		randomTrace := traces.NewTrace(traces.TraceID("trace"), testTraces[4].spans)
-		decision, _ := rulesengine.AcceptSpans(randomTrace.Spans())
+		decision, _ := rulesengine.AcceptSpans(testTraces[4].spans)
 		if i == 5 && !decision {
 			t.Errorf("Result of AcceptTrace for random trace #%d not as expected (%v)", i, true)
 

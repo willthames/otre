@@ -305,7 +305,12 @@ func (a *app) processSpans() {
 }
 
 func main() {
-
+	prometheus.MustRegister(incompleteTraces)
+	prometheus.MustRegister(acceptedTraces)
+	prometheus.MustRegister(rejectedTraces)
+	prometheus.MustRegister(timedOutTraces)
+	prometheus.MustRegister(spansInBuffer)
+	prometheus.MustRegister(tracesInBuffer)
 	a := cliParse()
 	level, err := logrus.ParseLevel(a.logLevel)
 	if err != nil {
@@ -332,12 +337,6 @@ func main() {
 		fmt.Printf("Error starting app: %v\n", err)
 		os.Exit(1)
 	}
-	prometheus.MustRegister(incompleteTraces)
-	prometheus.MustRegister(acceptedTraces)
-	prometheus.MustRegister(rejectedTraces)
-	prometheus.MustRegister(timedOutTraces)
-	prometheus.MustRegister(spansInBuffer)
-	prometheus.MustRegister(tracesInBuffer)
 
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(fmt.Sprintf(":%d", a.metricsPort), nil)
