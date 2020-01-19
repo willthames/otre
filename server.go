@@ -305,12 +305,12 @@ func (a *app) processSpans() {
 }
 
 func main() {
-	prometheus.MustRegister(incompleteTraces)
-	prometheus.MustRegister(acceptedTraces)
-	prometheus.MustRegister(rejectedTraces)
-	prometheus.MustRegister(timedOutTraces)
-	prometheus.MustRegister(spansInBuffer)
-	prometheus.MustRegister(tracesInBuffer)
+	prometheus.Register(incompleteTraces)
+	prometheus.Register(acceptedTraces)
+	prometheus.Register(rejectedTraces)
+	prometheus.Register(timedOutTraces)
+	prometheus.Register(spansInBuffer)
+	prometheus.Register(tracesInBuffer)
 	a := cliParse()
 	level, err := logrus.ParseLevel(a.logLevel)
 	if err != nil {
