@@ -16,6 +16,7 @@ type app struct {
 	metricsPort  int
 	server       *http.Server
 	flushAge     time.Duration
+	flushTimeout time.Duration
 	abandonAge   time.Duration
 	collectorURL string
 	traceBuffer  *traces.TraceBuffer
@@ -28,6 +29,7 @@ func cliParse() *app {
 	port := flag.Int("port", 8080, "server port")
 	metricsPort := flag.Int("metrics-port", 10010, "prometheus /metrics port")
 	flushAge := flag.Int("flush-age", 30000, "Interval in ms between trace flushes")
+	flushTimeout := flag.Int("flush-timeout", 600000, "Drop traces older than timeout if not successfully forwarded to collector")
 	abandonAge := flag.Int("abandon-age", 300000, "Age in ms after which incomplete trace is flushed")
 	collectorURL := flag.String("collector-url", "", "Host to forward traces. Not setting this will work as dry run")
 	policyFile := flag.String("policy-file", "", "policy definition file")
@@ -47,6 +49,7 @@ func cliParse() *app {
 		metricsPort:  *metricsPort,
 		flushAge:     time.Duration(int64(*flushAge * 1E6)),
 		abandonAge:   time.Duration(int64(*abandonAge * 1E6)),
+		flushTimeout: time.Duration(int64(*flushTimeout * 1E6)),
 		collectorURL: *collectorURL,
 		logLevel:     *logLevel,
 		traceBuffer:  traces.NewTraceBuffer(),

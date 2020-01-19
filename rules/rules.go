@@ -8,7 +8,6 @@ import (
 	"github.com/Sirupsen/logrus"
 	honey "github.com/honeycombio/honeycomb-opentracing-proxy/types"
 	"github.com/open-policy-agent/opa/rego"
-	"github.com/willthames/otre/traces"
 )
 
 // RulesEngine is used to test traces against a policy
@@ -70,10 +69,9 @@ func (r *RulesEngine) sampleSpans(spans []honey.Span) SampleResult {
 	return SampleResult{SampleRate: int(sampleRate), Reason: reason}
 }
 
-// AcceptTrace checks whether trace is accepted by the rules
+// AcceptSpans checks whether a set of spans is accepted by the rules
 // engine or not
-func (r *RulesEngine) AcceptTrace(trace *traces.Trace) (decision bool, sample SampleResult) {
-	spans := trace.Spans()
+func (r *RulesEngine) AcceptSpans(spans []honey.Span) (decision bool, sample SampleResult) {
 	sample = r.sampleSpans(spans)
 	decision = (rand.Intn(100) < sample.SampleRate)
 	return

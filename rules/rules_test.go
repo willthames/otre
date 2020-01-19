@@ -64,7 +64,7 @@ func TestAcceptTrace(t *testing.T) {
 	rand.Seed(1)
 	for i := 0; i < 8; i++ {
 		randomTrace := traces.NewTrace(traces.TraceID("trace"), testTraces[4].spans)
-		decision, _ := rulesengine.AcceptTrace(randomTrace)
+		decision, _ := rulesengine.AcceptSpans(randomTrace.Spans())
 		if i == 5 && !decision {
 			t.Errorf("Result of AcceptTrace for random trace #%d not as expected (%v)", i, true)
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
+	"github.com/willthames/otre/rules"
 )
 
 // SpanID is an ID for a span
@@ -22,7 +23,9 @@ type Trace struct {
 	traceID TraceID
 	spans   map[SpanID]types.Span
 	sync.RWMutex
-	version string
+	version        string
+	SampleResult   *rules.SampleResult
+	SampleDecision bool
 }
 
 // TraceBufferMetrics returns the net change in spans and traces in a TraceBuffer

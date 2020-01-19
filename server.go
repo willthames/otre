@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,6 +44,10 @@ var (
 	rejectedTraces = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "otre_traces_rejected_total",
 		Help: "The total number of rejected traces",
+	})
+	timedOutTraces = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "otre_traces_timed_out_total",
+		Help: "The total number of traces unable to be sent before timing out",
 	})
 	tracesInBuffer = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "otre_traces_in_buffer",
@@ -209,7 +214,7 @@ func (a *app) scheduler(tick *time.Ticker) {
 	}
 }
 
-func (a *app) writeTrace(trace *traces.Trace, sampleResult rules.SampleResult) error {
+func (a *app) writeTrace(trace *traces.Trace) error {
 	body, err := trace.MarshalJSON()
 	if err != nil {
 		logrus.WithError(err).WithField("trace", trace).Error("Error converting trace to JSON")
@@ -221,16 +226,15 @@ func (a *app) writeTrace(trace *traces.Trace, sampleResult rules.SampleResult) e
 			logrus.WithField("body", body).Debug("Error forwarding trace body")
 			return err
 		}
-		logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Debug("accepting trace")
+		logrus.WithField("trace", trace).Debug("accepting trace")
 	} else {
-		logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Info("dry-run: would have accepted trace")
+		logrus.WithField("trace", trace).Info("dry-run: would have accepted trace")
 	}
 	return nil
 }
 
 func (a *app) processSpans() {
 	var decision bool
-	var sampleResult rules.SampleResult
 	var traceID traces.TraceID
 	var trace *traces.Trace
 
@@ -239,23 +243,46 @@ func (a *app) processSpans() {
 	now := time.Now()
 	a.traceBuffer.RLock()
 	for traceID, trace = range a.traceBuffer.Traces {
+
 		if trace.IsComplete() && trace.OlderThanRelative(a.flushAge, now) {
-			decision, sampleResult = a.re.AcceptTrace(trace)
+			if trace.SampleResult != nil {
+				if trace.SampleDecision {
+					err := a.writeTrace(trace)
+					if err != nil {
+						deletions = append(deletions, traceID)
+						if strings.HasPrefix(trace.SampleResult.Reason, "trace is older than abandonAge") {
+							incompleteTraces.Inc()
+						} else {
+							acceptedTraces.Inc()
+						}
+					} else if trace.OlderThanRelative(a.flushTimeout, now) {
+						deletions = append(deletions, traceID)
+						logrus.WithField("flushTimeout", a.flushTimeout).Warn("Couldn't write trace to collector within timeout")
+						logrus.WithField("trace", trace).Debug("Timed out trace")
+						timedOutTraces.Inc()
+					}
+				}
+			}
+			trace.SampleDecision, *trace.SampleResult = a.re.AcceptSpans(trace.Spans())
 			if decision {
-				trace.AddStringTag("SampleReason", sampleResult.Reason)
-				trace.AddIntTag("SampleRate", sampleResult.SampleRate)
-				err := a.writeTrace(trace, sampleResult)
+				trace.AddStringTag("SampleReason", trace.SampleResult.Reason)
+				trace.AddIntTag("SampleRate", trace.SampleResult.SampleRate)
+				err := a.writeTrace(trace)
 				if err != nil {
 					deletions = append(deletions, traceID)
 					acceptedTraces.Inc()
 				}
 			} else {
-				logrus.WithField("reason", sampleResult.Reason).WithField("trace", trace).Debug("dropping trace")
+				logrus.WithField("trace", trace).Debug("dropping trace")
+				deletions = append(deletions, traceID)
 				rejectedTraces.Inc()
 			}
 		} else if trace.OlderThanRelative(a.abandonAge, now) {
-			trace.AddStringTag("SampleReason", fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge))
-			err := a.writeTrace(trace, sampleResult)
+			reason := fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge)
+			trace.AddStringTag("SampleReason", reason)
+			trace.SampleResult = &rules.SampleResult{SampleRate: 100, Reason: reason}
+			trace.SampleDecision = true
+			err := a.writeTrace(trace)
 			if err != nil {
 				deletions = append(deletions, traceID)
 				incompleteTraces.Inc()
@@ -308,6 +335,7 @@ func main() {
 	prometheus.MustRegister(incompleteTraces)
 	prometheus.MustRegister(acceptedTraces)
 	prometheus.MustRegister(rejectedTraces)
+	prometheus.MustRegister(timedOutTraces)
 	prometheus.MustRegister(spansInBuffer)
 	prometheus.MustRegister(tracesInBuffer)
 
