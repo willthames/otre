@@ -9,8 +9,6 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // SpanID is an ID for a span
@@ -27,23 +25,17 @@ type Trace struct {
 	version string
 }
 
-var (
-	tracesInBuffer = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "otre_traces_in_buffer",
-		Help: "The number of traces currently in the buffer",
-	})
-	spansInBuffer = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "otre_spans_in_buffer",
-		Help: "The number of spans currently in the buffer",
-	})
-)
+// TraceBufferMetrics returns the net change in spans and traces in a TraceBuffer
+type TraceBufferMetrics struct {
+	SpanDelta  int
+	TraceDelta int
+}
 
 func (t *Trace) addSpan(span types.Span) {
 	spanID := SpanID(span.ID)
 	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Locking trace")
 	t.Lock()
 	t.spans[spanID] = span
-	spansInBuffer.Inc()
 	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Unlocking trace")
 	t.Unlock()
 }
@@ -63,8 +55,9 @@ func NewTraceBuffer() *TraceBuffer {
 
 // AddSpan adds a span to a TraceBuffer, creating
 // a new trace if the trace isn't yet in the TraceBuffer
-func (tb *TraceBuffer) AddSpan(span types.Span) {
+func (tb *TraceBuffer) AddSpan(span types.Span) TraceBufferMetrics {
 	traceID := TraceID(span.TraceID)
+	tbm := *new(TraceBufferMetrics)
 	logrus.WithField("TraceID", traceID).Debug("RLocking TraceBuffer")
 	tb.RLock()
 	trace, ok := tb.Traces[traceID]
@@ -74,18 +67,25 @@ func (tb *TraceBuffer) AddSpan(span types.Span) {
 		logrus.WithField("TraceID", traceID).Debug("Locking TraceBuffer")
 		tb.Lock()
 		tb.Traces[traceID] = NewTrace(traceID, []types.Span{span})
-		tracesInBuffer.Inc()
-		spansInBuffer.Inc()
+		tbm.SpanDelta = 1
+		tbm.TraceDelta = 1
 		logrus.WithField("TraceID", traceID).Debug("Unlocking TraceBuffer")
 		tb.Unlock()
 	} else {
+		trace.RLock()
+		_, ok = trace.spans[SpanID(span.ID)]
+		trace.RUnlock()
 		trace.addSpan(span)
-		spansInBuffer.Inc()
+		if !ok {
+			tbm.SpanDelta = 1
+		}
 	}
+	return tbm
 }
 
 // DeleteTrace deletes a trace from the trace buffer
-func (tb *TraceBuffer) DeleteTrace(traceID TraceID) {
+func (tb *TraceBuffer) DeleteTrace(traceID TraceID) TraceBufferMetrics {
+	tbm := *new(TraceBufferMetrics)
 	tb.RLock()
 	trace := tb.Traces[traceID]
 	tb.RUnlock()
@@ -95,12 +95,13 @@ func (tb *TraceBuffer) DeleteTrace(traceID TraceID) {
 		trace.Lock()
 		delete(trace.spans, spanID)
 		trace.Unlock()
-		spansInBuffer.Dec()
+		tbm.SpanDelta--
 	}
 	tb.Lock()
 	delete(tb.Traces, traceID)
 	tb.Unlock()
-	tracesInBuffer.Dec()
+	tbm.TraceDelta = -1
+	return tbm
 }
 
 // NewTrace creates a Trace object from a list of Spans
@@ -243,9 +244,4 @@ func (t *Trace) AddIntTag(key string, value int) error {
 	}
 	t.spans[rootSpanID].BinaryAnnotations[key] = value
 	return nil
-}
-
-func init() {
-	prometheus.Register(spansInBuffer)
-	prometheus.Register(tracesInBuffer)
 }

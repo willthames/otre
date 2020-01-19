@@ -44,6 +44,14 @@ var (
 		Name: "otre_traces_rejected_total",
 		Help: "The total number of rejected traces",
 	})
+	tracesInBuffer = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "otre_traces_in_buffer",
+		Help: "The number of traces currently in the buffer",
+	})
+	spansInBuffer = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "otre_spans_in_buffer",
+		Help: "The number of spans currently in the buffer",
+	})
 )
 
 // handleSpans handles the /api/v1/spans POST endpoint. It decodes the request
@@ -103,9 +111,12 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
+	var tbm traces.TraceBufferMetrics
 	for _, span := range spans {
 		logrus.WithField("spanID", span.ID).Debug("Adding span to tracebuffer")
-		a.traceBuffer.AddSpan(*span)
+		tbm = a.traceBuffer.AddSpan(*span)
+		spansInBuffer.Add(float64(tbm.SpanDelta))
+		tracesInBuffer.Add(float64(tbm.TraceDelta))
 		logrus.WithField("spanID", span.ID).Debug("Finished adding span to tracebuffer")
 	}
 }
@@ -256,8 +267,11 @@ func (a *app) processSpans() {
 	a.traceBuffer.RUnlock()
 	logrus.Debug("processSpans: Locking tracebuffer")
 	a.traceBuffer.Lock()
+	var tbm traces.TraceBufferMetrics
 	for _, traceID = range deletions {
-		a.traceBuffer.DeleteTrace(traceID)
+		tbm = a.traceBuffer.DeleteTrace(traceID)
+		spansInBuffer.Add(float64(tbm.SpanDelta))
+		tracesInBuffer.Add(float64(tbm.TraceDelta))
 	}
 	logrus.Debug("processSpans: Unlocking tracebuffer")
 	a.traceBuffer.Unlock()
@@ -291,9 +305,11 @@ func main() {
 		fmt.Printf("Error starting app: %v\n", err)
 		os.Exit(1)
 	}
-	prometheus.Register(incompleteTraces)
-	prometheus.Register(acceptedTraces)
-	prometheus.Register(rejectedTraces)
+	prometheus.MustRegister(incompleteTraces)
+	prometheus.MustRegister(acceptedTraces)
+	prometheus.MustRegister(rejectedTraces)
+	prometheus.MustRegister(spansInBuffer)
+	prometheus.MustRegister(tracesInBuffer)
 
 	http.Handle("/metrics", promhttp.Handler())
 	http.ListenAndServe(fmt.Sprintf(":%d", a.metricsPort), nil)

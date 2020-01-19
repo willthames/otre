@@ -77,11 +77,33 @@ func TestParentSpanID(t *testing.T) {
 }
 
 func TestTraceBuffer(t *testing.T) {
+	tbm := *new(TraceBufferMetrics)
 	traceBuffer := NewTraceBuffer()
-	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
-	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}})
+	tbm = traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	if tbm.TraceDelta != 1 || tbm.SpanDelta != 1 {
+		t.Errorf("Adding new trace with single span should cause span and trace deltas of 1")
+	}
+	tbm = traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "root"}})
+	if tbm.TraceDelta != 0 || tbm.SpanDelta != 1 {
+		t.Errorf("Adding single span to existing trace should cause span delta of 1")
+	}
 	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "child", ParentID: "root"}})
-	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
 	traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild2", ParentID: "child"}})
-	traceBuffer.DeleteTrace(TraceID("trace"))
+	tbm = traceBuffer.DeleteTrace(TraceID("trace"))
+	if tbm.TraceDelta != -1 || tbm.SpanDelta != -4 {
+		t.Errorf("Deleting trace with four spans should cause span delta -4 and trace delta of -1")
+	}
+}
+
+func TestDuplicateSpan(t *testing.T) {
+	tbm := *new(TraceBufferMetrics)
+	traceBuffer := NewTraceBuffer()
+	tbm = traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	if tbm.TraceDelta != 1 || tbm.SpanDelta != 1 {
+		t.Errorf("Adding new trace with single span should cause span and trace deltas of 1")
+	}
+	tbm = traceBuffer.AddSpan(types.Span{CoreSpanMetadata: types.CoreSpanMetadata{TraceID: "trace", ID: "grandchild1", ParentID: "child"}})
+	if tbm.TraceDelta != 0 || tbm.SpanDelta != 0 {
+		t.Errorf("Adding duplicate span should cause span and trace deltas of 0")
+	}
 }
