@@ -234,7 +234,6 @@ func (a *app) writeTrace(trace *traces.Trace) error {
 }
 
 func (a *app) processSpans() {
-	var decision bool
 	var traceID traces.TraceID
 	var trace *traces.Trace
 
@@ -264,7 +263,7 @@ func (a *app) processSpans() {
 				}
 			}
 			trace.SampleDecision, trace.SampleResult = a.re.AcceptSpans(trace.Spans())
-			if decision {
+			if trace.SampleDecision {
 				trace.AddStringTag("SampleReason", trace.SampleResult.Reason)
 				trace.AddIntTag("SampleRate", trace.SampleResult.SampleRate)
 				err := a.writeTrace(trace)
