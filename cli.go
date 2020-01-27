@@ -2,7 +2,7 @@ package main
 
 import (
 	"flag"
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"io/ioutil"
 	"net/http"
 	"time"

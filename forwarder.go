@@ -13,7 +13,7 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 )
 
 type payload struct {

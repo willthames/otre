@@ -8,19 +8,19 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
+	"github.com/sirupsen/logrus"
+	"github.com/willthames/otre/spans"
 )
 
 type testTrace struct {
-	spans    []types.Span
+	spans    []spans.Span
 	expected int
 }
 
 func newTestTrace(traceFile string, expected int) *testTrace {
 	t := new(testTrace)
 	byteTraces, err := ioutil.ReadFile(traceFile)
-	t.spans = *new([]types.Span)
+	t.spans = *new([]spans.Span)
 	err = json.Unmarshal(byteTraces, &t.spans)
 	if err != nil {
 		panic(err)

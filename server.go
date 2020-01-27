@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -15,14 +16,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
-	v1 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v1"
-	v2 "github.com/honeycombio/honeycomb-opentracing-proxy/types/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sirupsen/logrus"
+	thrift "github.com/thrift-iterator/go"
 	"github.com/willthames/otre/rules"
+	"github.com/willthames/otre/spans"
 	"github.com/willthames/otre/traces"
 )
 
@@ -67,6 +67,7 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	data, err := ioutil.ReadAll(r.Body)
+	logrus.WithField("body", string(data)).Trace("request received")
 	if err != nil {
 		logrus.WithError(err).Error("Error reading request body")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -75,15 +76,13 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 
 	contentType := r.Header.Get("Content-Type")
 
-	var spans []*types.Span
+	var spans []*spans.Span
 	switch contentType {
 	case "application/json":
-		logrus.Info("Receiving data in json format")
+		logrus.Debug("Receiving data in json format")
 		switch r.URL.Path {
 		case "/api/v1/spans":
-			spans, err = v1.DecodeJSON(bytes.NewReader(data))
-		case "/api/v2/spans":
-			spans, err = v2.DecodeJSON(bytes.NewReader(data))
+			err = json.Unmarshal(data, &spans)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("invalid version"))
@@ -93,13 +92,10 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 		logrus.Debug("Receiving data in thrift format")
 		switch r.URL.Path {
 		case "/api/v1/spans":
-			spans, err = v1.DecodeThrift(bytes.NewReader(data))
-		case "/api/v2/spans":
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("thrift is not supported for v2 spans"))
+			err = thrift.Unmarshal(data, &spans)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("invalid version"))
+			w.Write([]byte("thrift only unsupported for v1"))
 			return
 		}
 	default:
@@ -289,18 +285,13 @@ func (a *app) processSpans() {
 		}
 	}
 	logrus.Debug("processSpans: RUnlocking tracebuffer")
-
 	a.traceBuffer.RUnlock()
-	logrus.Debug("processSpans: Locking tracebuffer")
-	a.traceBuffer.Lock()
 	var tbm traces.TraceBufferMetrics
 	for _, traceID = range deletions {
 		tbm = a.traceBuffer.DeleteTrace(traceID)
 		spansInBuffer.Add(float64(tbm.SpanDelta))
 		tracesInBuffer.Add(float64(tbm.TraceDelta))
 	}
-	logrus.Debug("processSpans: Unlocking tracebuffer")
-	a.traceBuffer.Unlock()
 }
 
 func main() {

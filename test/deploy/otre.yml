@@ -209,7 +209,7 @@ spec:
         prometheus.io/port: "10010"
     spec:
         containers:
-          - image: willthames/otre:v0.2-12-g57e6ef9
+          - image: willthames/otre:v0.2-14-g6214742
             name: otre
             command:
               - /go/bin/otre
@@ -221,7 +221,7 @@ spec:
               - --flush-age
               - "20000"
               - --log-level
-              - Debug
+              - Trace
               - --collector-url
               - http://zipkin:9411
             volumeMounts:

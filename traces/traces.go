@@ -3,13 +3,12 @@ package traces
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/Sirupsen/logrus"
-	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
+	"github.com/sirupsen/logrus"
 	"github.com/willthames/otre/rules"
+	"github.com/willthames/otre/spans"
 )
 
 // SpanID is an ID for a span
@@ -21,7 +20,7 @@ type TraceID string
 // Trace is a struct containing spans, a mapping of spanIDs to spans
 type Trace struct {
 	traceID TraceID
-	spans   map[SpanID]types.Span
+	spans   map[SpanID]spans.Span
 	sync.RWMutex
 	version        string
 	SampleResult   *rules.SampleResult
@@ -34,7 +33,7 @@ type TraceBufferMetrics struct {
 	TraceDelta int
 }
 
-func (t *Trace) addSpan(span types.Span) {
+func (t *Trace) addSpan(span spans.Span) {
 	spanID := SpanID(span.ID)
 	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Locking trace")
 	t.Lock()
@@ -58,7 +57,7 @@ func NewTraceBuffer() *TraceBuffer {
 
 // AddSpan adds a span to a TraceBuffer, creating
 // a new trace if the trace isn't yet in the TraceBuffer
-func (tb *TraceBuffer) AddSpan(span types.Span) TraceBufferMetrics {
+func (tb *TraceBuffer) AddSpan(span spans.Span) TraceBufferMetrics {
 	traceID := TraceID(span.TraceID)
 	tbm := *new(TraceBufferMetrics)
 	logrus.WithField("TraceID", traceID).Debug("RLocking TraceBuffer")
@@ -69,7 +68,7 @@ func (tb *TraceBuffer) AddSpan(span types.Span) TraceBufferMetrics {
 	if !ok {
 		logrus.WithField("TraceID", traceID).Debug("Locking TraceBuffer")
 		tb.Lock()
-		tb.Traces[traceID] = NewTrace(traceID, []types.Span{span})
+		tb.Traces[traceID] = NewTrace(traceID, []spans.Span{span})
 		tbm.SpanDelta = 1
 		tbm.TraceDelta = 1
 		logrus.WithField("TraceID", traceID).Debug("Unlocking TraceBuffer")
@@ -108,38 +107,26 @@ func (tb *TraceBuffer) DeleteTrace(traceID TraceID) TraceBufferMetrics {
 }
 
 // NewTrace creates a Trace object from a list of Spans
-func NewTrace(traceID TraceID, spans []types.Span) *Trace {
+func NewTrace(traceID TraceID, spanlist []spans.Span) *Trace {
 	trace := new(Trace)
 	trace.traceID = traceID
-	trace.spans = make(map[SpanID]types.Span)
-	for _, span := range spans {
-		trace.spans[SpanID(span.CoreSpanMetadata.ID)] = span
+	trace.spans = make(map[SpanID]spans.Span)
+	for _, span := range spanlist {
+		trace.spans[SpanID(span.ID)] = span
 	}
 	return trace
 }
 
 // MarshalJSON converts a Trace to a JSON string
 func (t *Trace) MarshalJSON() ([]byte, error) {
-	v := make([]string, len(t.spans))
-	idx := 0
 	t.RLock()
 	defer t.RUnlock()
-	var jsonSpan []byte
-	var err error
-	for _, span := range t.spans {
-		jsonSpan, err = json.Marshal(span)
-		if err != nil {
-			return nil, err
-		}
-		v[idx] = string(jsonSpan[:])
-		idx++
-	}
-	return []byte("[" + strings.Join(v, ",") + "]"), nil
+	return json.Marshal(t.spans)
 }
 
 // Spans converts a Trace to a list of spans
-func (t *Trace) Spans() []types.Span {
-	v := make([]types.Span, len(t.spans))
+func (t *Trace) Spans() []spans.Span {
+	v := make([]spans.Span, len(t.spans))
 	idx := 0
 	t.RLock()
 	defer t.RUnlock()
@@ -158,7 +145,7 @@ func (t *Trace) IsComplete() bool {
 	t.RLock()
 	defer t.RUnlock()
 	for _, span := range t.spans {
-		parentID = SpanID(span.CoreSpanMetadata.ParentID)
+		parentID = SpanID(span.ParentID)
 		var ok bool
 		if parentID != "" {
 			_, ok = t.spans[parentID]
@@ -179,7 +166,7 @@ func (t *Trace) MissingSpans() []SpanID {
 	t.RLock()
 	defer t.RUnlock()
 	for _, span := range t.spans {
-		parentID = SpanID(span.CoreSpanMetadata.ParentID)
+		parentID = SpanID(span.ParentID)
 		if parentID != "" {
 			_, ok = t.spans[parentID]
 			if !ok {
@@ -194,14 +181,14 @@ func (t *Trace) MissingSpans() []SpanID {
 // is older than an absolute timestamp
 func (t *Trace) olderThanAbsolute(abstime time.Time) bool {
 	var timestamp, finish time.Time
-	var duration float64
+	var duration time.Duration
 	maximum := time.Unix(0, 0)
 	t.RLock()
 	defer t.RUnlock()
 	for _, span := range t.spans {
 		timestamp = span.Timestamp
-		duration = span.DurationMs
-		finish = timestamp.Add(time.Duration(int64(duration * 1E6)))
+		duration = span.Duration
+		finish = timestamp.Add(duration)
 		if maximum.Before(finish) {
 			maximum = finish
 		}
@@ -221,7 +208,7 @@ func (t *Trace) rootSpanID() (SpanID, error) {
 	t.RLock()
 	defer t.RUnlock()
 	for spanID, span := range t.spans {
-		parentID = SpanID(span.CoreSpanMetadata.ParentID)
+		parentID = SpanID(span.ParentID)
 		if parentID == "" {
 			return spanID, nil
 		}

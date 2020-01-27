@@ -207,7 +207,7 @@ spec:
               value: "9411"
             - name: TRACING_SAMPLE_RATE
               value: "1"
-          image: willthames/docker-debug:blue-v0.1-5-g5069c1a
+          image: willthames/docker-debug:blue-v0.1-4-gb26d20e
           readinessProbe:
             tcpSocket:
               port: 5000
