@@ -216,18 +216,8 @@ func (t *Trace) rootSpanID() (SpanID, error) {
 	return "", fmt.Errorf("Couldn't find root span")
 }
 
-// AddStringTag adds a key-value binary annotation to a trace
-func (t *Trace) AddStringTag(key string, value string) error {
-	rootSpanID, err := t.rootSpanID()
-	if err != nil {
-		return err
-	}
-	t.spans[rootSpanID].BinaryAnnotations[key] = value
-	return nil
-}
-
-// AddIntTag adds a key-value binary annotation to a trace
-func (t *Trace) AddIntTag(key string, value int) error {
+// AddTag adds a key-value binary annotation to a trace
+func (t *Trace) AddTag(key string, value string) error {
 	rootSpanID, err := t.rootSpanID()
 	if err != nil {
 		return err

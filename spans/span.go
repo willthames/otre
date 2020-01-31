@@ -15,7 +15,7 @@ type Span struct {
 	Name              string
 	ID                string
 	ParentID          string
-	Annotations       []*annotation
+	Annotations       []*Annotation
 	BinaryAnnotations map[string]string
 	Debug             bool
 	Timestamp         time.Time
@@ -29,7 +29,7 @@ type v1Span struct {
 	Name              string             `thrift:"name,3" json:"name"`
 	ID                string             `thrift:"id,4" json:"id"`
 	ParentID          string             `thrift:"parent_id,5" json:"parentId,omitempty"`
-	Annotations       []*annotation      `thrift:"annotations,6" json:"annotations"`
+	Annotations       []*Annotation      `thrift:"annotations,6" json:"annotations"`
 	Debug             bool               `thrift:"debug,9" json:"debug,omitempty"`
 	TraceIDHigh       *int64             `thrift:"trace_id_high,12" json:"trace_id_high,omitempty"`
 	BinaryAnnotations []BinaryAnnotation `thrift:"binary_annotations,8" json:"binary_annotations"`
@@ -37,22 +37,26 @@ type v1Span struct {
 	Duration          int64              `thrift:"duration,11" json:"duration,omitempty"`
 }
 
-type annotation struct {
-	timestamp int64     `json:"timestamp"`
-	value     string    `json:"value"`
-	endpoint  *endpoint `json:"endpoint,omitempty"`
+type Annotation struct {
+	Timestamp int64     `thrift:"timestamp,1" json:"timestamp"`
+	Value     string    `thrift:"value,2" json:"value"`
+	Host      *Endpoint `thrift:"host,3" json:"host,omitempty"`
 }
+
+type AnnotationType int64
 
 type BinaryAnnotation struct {
-	Key      string    `thrift:"key,13" json:"key"`
-	Value    string    `thrift:"value,14" json:"value"`
-	endpoint *endpoint `json:"endpoint,omitempty"`
+	Key            string         `thrift:"key,1" json:"key"`
+	Value          []byte         `thrift:"value,2" json:"value"`
+	AnnotationType AnnotationType `thrift:"annotation_type,3" json:"annotation_type"`
+	Host           *Endpoint      `thrift:"host,4" json:"host,omitempty"`
 }
 
-type endpoint struct {
-	ipv4        string `json:"ipv4"`
-	port        int    `json:"port"`
-	serviceName string `json:"serviceName"`
+type Endpoint struct {
+	Ipv4        int32  `thrift:"ipv4,1" json:"ipv4"`
+	Port        int16  `thrift:"port,2" json:"port"`
+	ServiceName string `thrift:"service_name,3" json:"service_name"`
+	Ipv6        []byte `thrift:"ipv6,4" json:"ipv6,omitempty"`
 }
 
 // Span converts a JSONSpan into Span after Unmarshalling
@@ -70,7 +74,7 @@ func (v1span v1Span) Span() Span {
 	span.Timestamp = time.Unix(v1span.Timestamp/1E6, (v1span.Timestamp%1E6)*1E3)
 	span.BinaryAnnotations = make(map[string]string, len(v1span.BinaryAnnotations))
 	for _, annotation := range v1span.BinaryAnnotations {
-		span.BinaryAnnotations[annotation.Key] = annotation.Value
+		span.BinaryAnnotations[annotation.Key] = string(annotation.Value)
 	}
 	return span
 }
@@ -99,7 +103,7 @@ func convertAnnotations(annotations map[string]string) []BinaryAnnotation {
 	result := make([]BinaryAnnotation, len(annotations))
 	index := 0
 	for key, value := range annotations {
-		result[index] = BinaryAnnotation{Key: key, Value: value}
+		result[index] = BinaryAnnotation{Key: key, Value: []byte(value)}
 		index++
 	}
 	return result

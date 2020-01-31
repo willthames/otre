@@ -67,7 +67,6 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	data, err := ioutil.ReadAll(r.Body)
-	logrus.WithField("body", string(data)).Trace("request received")
 	if err != nil {
 		logrus.WithError(err).Error("Error reading request body")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -92,7 +91,10 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 		logrus.Debug("Receiving data in thrift format")
 		switch r.URL.Path {
 		case "/api/v1/spans":
-			err = thrift.Unmarshal(data, &spans)
+			if jsondata, err := thrift.ToJSON(data); err != nil {
+				logrus.WithField("json", jsondata).Debug("Thrift data to JSON")
+				err = thrift.Unmarshal(data, &spans)
+			}
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("thrift only unsupported for v1"))
@@ -167,7 +169,7 @@ func (a *app) start() error {
 
 	a.server = &http.Server{
 		Addr:     fmt.Sprintf(":%d", a.port),
-		Handler:  prometheus.InstrumentHandler("otre", logging(logger)(mux)),
+		Handler:  promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, logging(logger)(mux)),
 		ErrorLog: logger,
 	}
 	go a.server.ListenAndServe()
@@ -260,8 +262,8 @@ func (a *app) processSpans() {
 			}
 			trace.SampleDecision, trace.SampleResult = a.re.AcceptSpans(trace.Spans())
 			if trace.SampleDecision {
-				trace.AddStringTag("SampleReason", trace.SampleResult.Reason)
-				trace.AddIntTag("SampleRate", trace.SampleResult.SampleRate)
+				trace.AddTag("SampleReason", trace.SampleResult.Reason)
+				trace.AddTag("SampleRate", fmt.Sprintf("%d", trace.SampleResult.SampleRate))
 				err := a.writeTrace(trace)
 				if err != nil {
 					deletions = append(deletions, traceID)
@@ -274,7 +276,7 @@ func (a *app) processSpans() {
 			}
 		} else if trace.OlderThanRelative(a.abandonAge, now) {
 			reason := fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge)
-			trace.AddStringTag("SampleReason", reason)
+			trace.AddTag("SampleReason", reason)
 			trace.SampleResult = &rules.SampleResult{SampleRate: 100, Reason: reason}
 			trace.SampleDecision = true
 			err := a.writeTrace(trace)
