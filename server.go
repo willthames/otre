@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
-	thrift "github.com/thrift-iterator/go"
 	"github.com/willthames/otre/rules"
 	"github.com/willthames/otre/spans"
 	"github.com/willthames/otre/traces"
@@ -75,13 +74,13 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 
 	contentType := r.Header.Get("Content-Type")
 
-	var spans []*spans.Span
+	var result []*spans.Span
 	switch contentType {
 	case "application/json":
 		logrus.Debug("Receiving data in json format")
 		switch r.URL.Path {
 		case "/api/v1/spans":
-			err = json.Unmarshal(data, &spans)
+			err = json.Unmarshal(data, &result)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("invalid version"))
@@ -91,10 +90,7 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 		logrus.Debug("Receiving data in thrift format")
 		switch r.URL.Path {
 		case "/api/v1/spans":
-			if jsondata, err := thrift.ToJSON(data); err != nil {
-				logrus.WithField("json", jsondata).Debug("Thrift data to JSON")
-				err = thrift.Unmarshal(data, &spans)
-			}
+			result, err = spans.DecodeThrift(data)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("thrift only unsupported for v1"))
@@ -115,7 +111,7 @@ func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 	var tbm traces.TraceBufferMetrics
-	for _, span := range spans {
+	for _, span := range result {
 		logrus.WithField("spanID", span.ID).Debug("Adding span to tracebuffer")
 		tbm = a.traceBuffer.AddSpan(*span)
 		spansInBuffer.Add(float64(tbm.SpanDelta))
