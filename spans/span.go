@@ -205,7 +205,7 @@ func convertThriftSpan(ts *zipkincore.Span) *Span {
 			// own hostIPv4/ServiceName/etc. fields. Simply skip those for now.
 			continue
 		}
-		s.BinaryAnnotations[ba.Key] = convertBinaryAnnotationValue(ba).(string)
+		s.BinaryAnnotations[ba.Key] = convertBinaryAnnotationValue(ba)
 	}
 	return s
 }

@@ -3,6 +3,7 @@ package traces
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,6 +32,15 @@ type Trace struct {
 type TraceBufferMetrics struct {
 	SpanDelta  int
 	TraceDelta int
+}
+
+func (t *Trace) String() string {
+	spans := t.Spans()
+	strSpans := make([]string, len(spans))
+	for index, span := range spans {
+		strSpans[index] = span.String()
+	}
+	return fmt.Sprintf("Trace %s: [%s]", t.traceID, strings.Join(strSpans, ","))
 }
 
 func (t *Trace) addSpan(span spans.Span) {
