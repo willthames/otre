@@ -6,7 +6,7 @@ import (
 )
 
 func TestJSONUnmarshal(t *testing.T) {
-	b := []byte(`{"id":"hello","name":"bowser","timestamp":1480979203000000,"binary_annotations":[{"key":"hello","value":"world"}],"duration":1000}`)
+	b := []byte(`{"id":"hello","name":"bowser","timestamp":1480979203000000,"binaryAnnotations":[{"key":"hello","value":"world"}],"duration":1000}`)
 	span := new(Span)
 	err := span.UnmarshalJSON(b)
 	if err != nil {

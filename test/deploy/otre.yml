@@ -209,7 +209,7 @@ spec:
         prometheus.io/port: "10010"
     spec:
         containers:
-          - image: willthames/otre:v0.2-17-g9bd7ef6
+          - image: willthames/otre:v0.2-18-gebade61
             name: otre
             command:
               - /go/bin/otre

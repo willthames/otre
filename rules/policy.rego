@@ -5,19 +5,19 @@ default status = 0
 
 ping[span] {
   span := input[_]
-  url :=  input[_].binaryAnnotations["http.url"]
+  url :=  span.BinaryAnnotations["http.url"]
   endswith(url, "/ping")
 }
 
 api_new_service[span] {
   span := input[_]
-  url :=  input[_].binaryAnnotations["http.url"]
+  url :=  span.BinaryAnnotations["http.url"]
   contains(url, "/api/newService")
 }
 
 error_response[span] {
   span := input[_]
-  status := to_number(span.binaryAnnotations["http.status_code"])
+  status := to_number(span.BinaryAnnotations["http.status_code"])
   status >= 500
 }
 

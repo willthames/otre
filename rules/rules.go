@@ -66,6 +66,7 @@ func (r *RulesEngine) sampleSpans(spans []spans.Span) *SampleResult {
 		logrus.WithField("spans", spans).WithField("results", results).Warn("Unexpected result returned")
 		return defaultResult
 	}
+	logrus.WithField("spans", spans).WithField("sampleRate", sampleRate).WithField("reason", reason).Debug("Rules applied")
 	return &SampleResult{SampleRate: int(sampleRate), Reason: reason}
 }
 

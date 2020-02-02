@@ -45,7 +45,7 @@ type v1Span struct {
 	Annotations       []*Annotation      `thrift:"annotations,6" json:"annotations"`
 	Debug             bool               `thrift:"debug,9" json:"debug,omitempty"`
 	TraceIDHigh       *int64             `thrift:"trace_id_high,12" json:"trace_id_high,omitempty"`
-	BinaryAnnotations []BinaryAnnotation `thrift:"binary_annotations,8" json:"binary_annotations"`
+	BinaryAnnotations []BinaryAnnotation `thrift:"binary_annotations,8" json:"binaryAnnotations"`
 	Timestamp         int64              `thrift:"timestamp,10" json:"timestamp,omitempty"`
 	Duration          int64              `thrift:"duration,11" json:"duration,omitempty"`
 }
@@ -74,6 +74,15 @@ type Endpoint struct {
 
 func (s Span) String() string {
 	return fmt.Sprintf("%#v", s)
+}
+
+func (ba BinaryAnnotation) String() string {
+	switch ba.AnnotationType {
+	case AnnotationType(zipkincore.AnnotationType_STRING):
+		return fmt.Sprintf("BinaryAnnotation({Key:%s Value:%s Host:%#v})", ba.Key, string(ba.Value.(string)), ba.Host)
+	default:
+		return fmt.Sprintf("BinaryAnnotation({Key:%s Value:%v Host:%#v})", ba.Key, ba.Value, ba.Host)
+	}
 }
 
 func convertEndpoint(ep *zipkincore.Endpoint) *Endpoint {
