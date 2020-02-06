@@ -5,19 +5,25 @@ default status = 0
 
 ping[span] {
   span := input[_]
-  url :=  span.BinaryAnnotations["http.url"]
+  annotation := span.binaryAnnotations[_]
+  annotation.key == "http.url"
+  url :=  annotation.value
   endswith(url, "/ping")
 }
 
 api_new_service[span] {
   span := input[_]
-  url :=  span.BinaryAnnotations["http.url"]
+  annotation := span.binaryAnnotations[_]
+  annotation.key == "http.url"
+  url :=  annotation.value
   contains(url, "/api/newService")
 }
 
 error_response[span] {
   span := input[_]
-  status := to_number(span.BinaryAnnotations["http.status_code"])
+  annotation := span.binaryAnnotations[_]
+  annotation.key == "http.status_code"
+  status := to_number(annotation.value)
   status >= 500
 }
 

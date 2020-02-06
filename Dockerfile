@@ -8,8 +8,7 @@ COPY rules/ /src/rules/
 COPY spans/ /src/spans/
 
 ENV CGO_ENABLED 0
-#RUN go build ./... && go test ./... && go install ./...
-RUN go build ./... && go install ./...
+RUN go build ./... && go test ./... && go install ./...
 
 FROM alpine:3.11
 COPY --from=builder /go/bin/otre /go/bin/otre

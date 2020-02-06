@@ -154,19 +154,23 @@ data:
 
     ping[span] {
       span := input[_]
-      url :=  input[_].binaryAnnotations["http.url"]
-      endswith(url, "/ping")
+      annotation := span.binaryAnnotations[_]
+      annotation.key == "http.url"
+      endswith(annotation.value, "/ping")
     }
 
     api_new_service[span] {
       span := input[_]
-      url :=  input[_].binaryAnnotations["http.url"]
-      contains(url, "/api/newService")
+      annotation := span.binaryAnnotations[_]
+      annotation.key == "http.url"
+      contains(annotation.value, "/api/newService")
     }
 
     error_response[span] {
       span := input[_]
-      status := to_number(span.binaryAnnotations["http.status_code"])
+      annotation := span.binaryAnnotations[_]
+      annotation.key == "http.status_code"
+      status := to_number(annotation.value)
       status >= 500
     }
 
