@@ -255,20 +255,21 @@ func (a *app) processSpans() {
 						timedOutTraces.Inc()
 					}
 				}
-			}
-			trace.SampleDecision, trace.SampleResult = a.re.AcceptSpans(trace.Spans())
-			if trace.SampleDecision {
-				trace.AddTag("SampleReason", trace.SampleResult.Reason)
-				trace.AddTag("SampleRate", fmt.Sprintf("%d", trace.SampleResult.SampleRate))
-				err := a.writeTrace(trace)
-				if err != nil {
-					deletions = append(deletions, traceID)
-					acceptedTraces.Inc()
-				}
 			} else {
-				logrus.WithField("trace", trace).Debug("rejecting trace through sampling")
-				deletions = append(deletions, traceID)
-				rejectedTraces.Inc()
+				trace.SampleDecision, trace.SampleResult = a.re.AcceptSpans(trace.Spans())
+				if trace.SampleDecision {
+					trace.AddTag("SampleReason", trace.SampleResult.Reason)
+					trace.AddTag("SampleRate", fmt.Sprintf("%d", trace.SampleResult.SampleRate))
+					err := a.writeTrace(trace)
+					if err != nil {
+						deletions = append(deletions, traceID)
+						acceptedTraces.Inc()
+					}
+				} else {
+					logrus.WithField("trace", trace).Debug("rejecting trace through sampling")
+					deletions = append(deletions, traceID)
+					rejectedTraces.Inc()
+				}
 			}
 		} else if trace.OlderThanRelative(a.abandonAge, now) {
 			reason := fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge)
