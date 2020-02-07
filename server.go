@@ -266,7 +266,7 @@ func (a *app) processSpans() {
 					acceptedTraces.Inc()
 				}
 			} else {
-				logrus.WithField("trace", trace).Debug("dropping trace")
+				logrus.WithField("trace", trace).Debug("rejecting trace through sampling")
 				deletions = append(deletions, traceID)
 				rejectedTraces.Inc()
 			}

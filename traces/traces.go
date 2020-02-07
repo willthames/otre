@@ -129,9 +129,7 @@ func NewTrace(traceID TraceID, spanlist []spans.Span) *Trace {
 
 // MarshalJSON converts a Trace to a JSON string
 func (t *Trace) MarshalJSON() ([]byte, error) {
-	t.RLock()
-	defer t.RUnlock()
-	return json.Marshal(t.spans)
+	return json.Marshal(t.Spans())
 }
 
 // Spans converts a Trace to a list of spans
@@ -232,6 +230,7 @@ func (t *Trace) AddTag(key string, value string) error {
 	if err != nil {
 		return err
 	}
-	t.spans[rootSpanID].BinaryAnnotations[key] = value
+	rootSpan := t.spans[rootSpanID]
+	rootSpan.BinaryAnnotations = append(rootSpan.BinaryAnnotations, spans.BinaryAnnotation{Key: key, Value: value})
 	return nil
 }

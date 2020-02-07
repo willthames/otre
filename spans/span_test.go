@@ -15,8 +15,8 @@ func TestJSONUnmarshal(t *testing.T) {
 	if span.Duration != 1000*time.Microsecond {
 		t.Errorf("span duration was incorrectly parsed")
 	}
-	value, ok := span.BinaryAnnotations["hello"]
-	if !ok || value != "world" {
+	entry := span.BinaryAnnotations[0]
+	if entry.Value != "world" || entry.Key != "hello" {
 		t.Errorf("binary annotations incorrectly parsed")
 	}
 }

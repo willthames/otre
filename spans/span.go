@@ -24,7 +24,7 @@ type Span struct {
 	ID                string
 	ParentID          string
 	Annotations       []*Annotation
-	BinaryAnnotations map[string]interface{}
+	BinaryAnnotations []BinaryAnnotation
 	Debug             bool
 	Timestamp         time.Time
 	Duration          time.Duration
@@ -44,7 +44,7 @@ type v1Span struct {
 	ParentID          string             `thrift:"parent_id,5" json:"parentId,omitempty"`
 	Annotations       []*Annotation      `thrift:"annotations,6" json:"annotations"`
 	Debug             bool               `thrift:"debug,9" json:"debug,omitempty"`
-	TraceIDHigh       *int64             `thrift:"trace_id_high,12" json:"trace_id_high,omitempty"`
+	TraceIDHigh       *int64             `thrift:"trace_id_high,12" json:"traceIdHigh,omitempty"`
 	BinaryAnnotations []BinaryAnnotation `thrift:"binary_annotations,8" json:"binaryAnnotations"`
 	Timestamp         int64              `thrift:"timestamp,10" json:"timestamp,omitempty"`
 	Duration          int64              `thrift:"duration,11" json:"duration,omitempty"`
@@ -53,7 +53,7 @@ type v1Span struct {
 type Annotation struct {
 	Timestamp int64     `thrift:"timestamp,1" json:"timestamp"`
 	Value     string    `thrift:"value,2" json:"value"`
-	Host      *Endpoint `thrift:"host,3" json:"host,omitempty"`
+	Host      *Endpoint `thrift:"host,3" json:"endpoint,omitempty"`
 }
 
 type AnnotationType int64
@@ -61,14 +61,14 @@ type AnnotationType int64
 type BinaryAnnotation struct {
 	Key            string         `thrift:"key,1" json:"key"`
 	Value          interface{}    `thrift:"value,2" json:"value"`
-	AnnotationType AnnotationType `thrift:"annotation_type,3" json:"annotation_type"`
-	Host           *Endpoint      `thrift:"host,4" json:"host,omitempty"`
+	AnnotationType AnnotationType `thrift:"annotation_type,3" json:"annotationType"`
+	Host           *Endpoint      `thrift:"host,4" json:"endpoint,omitempty"`
 }
 
 type Endpoint struct {
 	Ipv4        string `thrift:"ipv4,1" json:"ipv4"`
 	Port        int16  `thrift:"port,2" json:"port"`
-	ServiceName string `thrift:"service_name,3" json:"service_name"`
+	ServiceName string `thrift:"service_name,3" json:"serviceName"`
 	Ipv6        []byte `thrift:"ipv6,4" json:"ipv6,omitempty"`
 }
 
@@ -104,21 +104,36 @@ func convertTimestamp(timestamp int64) time.Time {
 // Span converts a JSONSpan into Span after Unmarshalling
 func (v1span v1Span) Span() *Span {
 	span := &Span{
-		TraceID:     v1span.TraceID,
-		Name:        v1span.Name,
-		ID:          v1span.ID,
-		ParentID:    v1span.ParentID,
-		Annotations: v1span.Annotations,
-		Debug:       v1span.Debug,
-		TraceIDHigh: v1span.TraceIDHigh,
+		TraceID:           v1span.TraceID,
+		Name:              v1span.Name,
+		ID:                v1span.ID,
+		ParentID:          v1span.ParentID,
+		Annotations:       v1span.Annotations,
+		BinaryAnnotations: convertJSONAnnotations(v1span.BinaryAnnotations),
+		Debug:             v1span.Debug,
+		TraceIDHigh:       v1span.TraceIDHigh,
 	}
 	span.Duration = convertDuration(v1span.Duration)
 	span.Timestamp = convertTimestamp(v1span.Timestamp)
-	span.BinaryAnnotations = make(map[string]interface{}, len(v1span.BinaryAnnotations))
-	for _, annotation := range v1span.BinaryAnnotations {
-		span.BinaryAnnotations[annotation.Key] = annotation.Value
-	}
 	return span
+}
+
+func convertJSONAnnotations(ba []BinaryAnnotation) []BinaryAnnotation {
+	result := make([]BinaryAnnotation, len(ba))
+	for index, ann := range ba {
+		result[index] = BinaryAnnotation(ann)
+		switch ann.Value.(type) {
+		case int:
+			result[index].AnnotationType = AnnotationType(zipkincore.AnnotationType_I64)
+		case string:
+			result[index].AnnotationType = AnnotationType(zipkincore.AnnotationType_STRING)
+		case bool:
+			result[index].AnnotationType = AnnotationType(zipkincore.AnnotationType_BOOL)
+		default:
+			result[index].AnnotationType = AnnotationType(zipkincore.AnnotationType_STRING)
+		}
+	}
+	return result
 }
 
 func (v1spans v1Spans) Spans() []*Span {
@@ -131,7 +146,6 @@ func (v1spans v1Spans) Spans() []*Span {
 
 // NewJSONSpan converts a Span into JSONSpan suitable for Marshalling
 func newV1Span(span Span) v1Span {
-	binaryAnnotations := convertAnnotations(span.BinaryAnnotations)
 	timestamp := span.Timestamp.UnixNano() / 1E3
 	duration := span.Duration.Microseconds()
 	v1span := v1Span{
@@ -142,21 +156,11 @@ func newV1Span(span Span) v1Span {
 		Annotations:       span.Annotations,
 		Debug:             span.Debug,
 		TraceIDHigh:       span.TraceIDHigh,
-		BinaryAnnotations: binaryAnnotations,
+		BinaryAnnotations: span.BinaryAnnotations,
 		Timestamp:         timestamp,
 		Duration:          duration,
 	}
 	return v1span
-}
-
-func convertAnnotations(annotations map[string]interface{}) []BinaryAnnotation {
-	result := make([]BinaryAnnotation, len(annotations))
-	index := 0
-	for key, value := range annotations {
-		result[index] = BinaryAnnotation{Key: key, Value: value}
-		index++
-	}
-	return result
 }
 
 func (s Span) MarshalJSON() ([]byte, error) {
@@ -201,9 +205,9 @@ func convertThriftSpan(ts *zipkincore.Span) *Span {
 		s.Timestamp = time.Now().UTC()
 	}
 
-	s.BinaryAnnotations = make(map[string]interface{}, len(ts.BinaryAnnotations))
+	s.BinaryAnnotations = make([]BinaryAnnotation, len(ts.BinaryAnnotations))
 
-	for _, ba := range ts.BinaryAnnotations {
+	for index, ba := range ts.BinaryAnnotations {
 		if ba.Key == "ca" || ba.Key == "sa" {
 			// BinaryAnnotations with key "ca" (client addr) or "sa" (server addr)
 			// are special: the endpoint value for those is the address of the
@@ -214,7 +218,7 @@ func convertThriftSpan(ts *zipkincore.Span) *Span {
 			// own hostIPv4/ServiceName/etc. fields. Simply skip those for now.
 			continue
 		}
-		s.BinaryAnnotations[ba.Key] = convertBinaryAnnotationValue(ba)
+		s.BinaryAnnotations[index] = BinaryAnnotation{Host: convertEndpoint(ba.Host), Key: ba.Key, Value: convertBinaryAnnotationValue(ba), AnnotationType: AnnotationType(ba.AnnotationType)}
 	}
 	return s
 }

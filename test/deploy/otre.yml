@@ -189,6 +189,7 @@ data:
     }  else = {"sampleRate": 25, "reason": "fallback sample rate"} {
       true
     }
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -213,7 +214,7 @@ spec:
         prometheus.io/port: "10010"
     spec:
         containers:
-          - image: willthames/otre:v0.2-18-gebade61
+          - image: willthames/otre:v0.2-21-g56304bd
             name: otre
             command:
               - /go/bin/otre
