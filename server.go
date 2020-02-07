@@ -258,9 +258,15 @@ func (a *app) processSpans() {
 			} else {
 				trace.SampleDecision, trace.SampleResult = a.re.AcceptSpans(trace.Spans())
 				if trace.SampleDecision {
-					trace.AddTag("SampleReason", trace.SampleResult.Reason)
-					trace.AddTag("SampleRate", fmt.Sprintf("%d", trace.SampleResult.SampleRate))
-					err := a.writeTrace(trace)
+					err := trace.AddTag("SampleReason", trace.SampleResult.Reason)
+					if err != nil {
+						logrus.WithField("traceID", traceID).WithError(err).Warn("Couldn't add tag")
+					}
+					err = trace.AddTag("SampleRate", fmt.Sprintf("%d", trace.SampleResult.SampleRate))
+					if err != nil {
+						logrus.WithField("traceID", traceID).WithError(err).Warn("Couldn't add tag")
+					}
+					err = a.writeTrace(trace)
 					if err != nil {
 						deletions = append(deletions, traceID)
 						acceptedTraces.Inc()
@@ -273,10 +279,13 @@ func (a *app) processSpans() {
 			}
 		} else if trace.OlderThanRelative(a.abandonAge, now) {
 			reason := fmt.Sprintf("trace is older than abandonAge %dms", a.abandonAge)
-			trace.AddTag("SampleReason", reason)
+			err := trace.AddTag("SampleReason", reason)
+			if err != nil {
+				logrus.WithField("traceID", traceID).WithError(err).Warn("Couldn't add tag")
+			}
 			trace.SampleResult = &rules.SampleResult{SampleRate: 100, Reason: reason}
 			trace.SampleDecision = true
-			err := a.writeTrace(trace)
+			err = a.writeTrace(trace)
 			if err != nil {
 				deletions = append(deletions, traceID)
 				incompleteTraces.Inc()

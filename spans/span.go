@@ -66,8 +66,8 @@ type BinaryAnnotation struct {
 }
 
 type Endpoint struct {
-	Ipv4        string `thrift:"ipv4,1" json:"ipv4"`
-	Port        int16  `thrift:"port,2" json:"port"`
+	Ipv4        string `thrift:"ipv4,1" json:"ipv4,omitempty"`
+	Port        int16  `thrift:"port,2" json:"port,omitempty"`
 	ServiceName string `thrift:"service_name,3" json:"serviceName"`
 	Ipv6        []byte `thrift:"ipv6,4" json:"ipv6,omitempty"`
 }
