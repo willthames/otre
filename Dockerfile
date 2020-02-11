@@ -1,11 +1,11 @@
 FROM golang:1.13.6-alpine3.11 AS builder
 WORKDIR /src
+RUN apk update && apk add git
 COPY go.mod go.sum /src/
 RUN go mod download
-COPY cli.go server.go forwarder.go /src/
+COPY server.go /src/
 COPY traces/ /src/traces/
 COPY rules/ /src/rules/
-COPY spans/ /src/spans/
 
 ENV CGO_ENABLED 0
 RUN go build ./... && go test ./... && go install ./...

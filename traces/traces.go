@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/willthames/opentracing-processor/span"
 	"github.com/willthames/otre/rules"
-	"github.com/willthames/otre/spans"
 )
 
 // SpanID is an ID for a span
@@ -21,7 +21,7 @@ type TraceID string
 // Trace is a struct containing spans, a mapping of spanIDs to spans
 type Trace struct {
 	traceID TraceID
-	spans   map[SpanID]spans.Span
+	spans   map[SpanID]span.Span
 	sync.RWMutex
 	version        string
 	SampleResult   *rules.SampleResult
@@ -43,7 +43,7 @@ func (t *Trace) String() string {
 	return fmt.Sprintf("Trace %s: [%s]", t.traceID, strings.Join(strSpans, ","))
 }
 
-func (t *Trace) addSpan(span spans.Span) {
+func (t *Trace) addSpan(span span.Span) {
 	spanID := SpanID(span.ID)
 	logrus.WithField("SpanID", spanID).WithField("TraceID", t.traceID).Debug("Locking trace")
 	t.Lock()
@@ -67,8 +67,8 @@ func NewTraceBuffer() *TraceBuffer {
 
 // AddSpan adds a span to a TraceBuffer, creating
 // a new trace if the trace isn't yet in the TraceBuffer
-func (tb *TraceBuffer) AddSpan(span spans.Span) TraceBufferMetrics {
-	traceID := TraceID(span.TraceID)
+func (tb *TraceBuffer) AddSpan(aspan span.Span) TraceBufferMetrics {
+	traceID := TraceID(aspan.TraceID)
 	tbm := *new(TraceBufferMetrics)
 	logrus.WithField("TraceID", traceID).Debug("RLocking TraceBuffer")
 	tb.RLock()
@@ -78,16 +78,16 @@ func (tb *TraceBuffer) AddSpan(span spans.Span) TraceBufferMetrics {
 	if !ok {
 		logrus.WithField("TraceID", traceID).Debug("Locking TraceBuffer")
 		tb.Lock()
-		tb.Traces[traceID] = NewTrace(traceID, []spans.Span{span})
+		tb.Traces[traceID] = NewTrace(traceID, []span.Span{aspan})
 		tbm.SpanDelta = 1
 		tbm.TraceDelta = 1
 		logrus.WithField("TraceID", traceID).Debug("Unlocking TraceBuffer")
 		tb.Unlock()
 	} else {
 		trace.RLock()
-		_, ok = trace.spans[SpanID(span.ID)]
+		_, ok = trace.spans[SpanID(aspan.ID)]
 		trace.RUnlock()
-		trace.addSpan(span)
+		trace.addSpan(aspan)
 		if !ok {
 			tbm.SpanDelta = 1
 		}
@@ -117,10 +117,10 @@ func (tb *TraceBuffer) DeleteTrace(traceID TraceID) TraceBufferMetrics {
 }
 
 // NewTrace creates a Trace object from a list of Spans
-func NewTrace(traceID TraceID, spanlist []spans.Span) *Trace {
+func NewTrace(traceID TraceID, spanlist []span.Span) *Trace {
 	trace := new(Trace)
 	trace.traceID = traceID
-	trace.spans = make(map[SpanID]spans.Span)
+	trace.spans = make(map[SpanID]span.Span)
 	for _, span := range spanlist {
 		trace.spans[SpanID(span.ID)] = span
 	}
@@ -133,8 +133,8 @@ func (t *Trace) MarshalJSON() ([]byte, error) {
 }
 
 // Spans converts a Trace to a list of spans
-func (t *Trace) Spans() []spans.Span {
-	v := make([]spans.Span, len(t.spans))
+func (t *Trace) Spans() []span.Span {
+	v := make([]span.Span, len(t.spans))
 	idx := 0
 	t.RLock()
 	defer t.RUnlock()
@@ -231,6 +231,6 @@ func (t *Trace) AddTag(key string, value string) error {
 		return err
 	}
 	rootSpan := t.spans[rootSpanID]
-	rootSpan.BinaryAnnotations = append(rootSpan.BinaryAnnotations, spans.BinaryAnnotation{Key: key, Value: value})
+	rootSpan.BinaryAnnotations = append(rootSpan.BinaryAnnotations, span.BinaryAnnotation{Key: key, Value: value})
 	return nil
 }

@@ -9,18 +9,18 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
-	"github.com/willthames/otre/spans"
+	"github.com/willthames/opentracing-processor/span"
 )
 
 type testTrace struct {
-	spans    []spans.Span
+	spans    []span.Span
 	expected int
 }
 
 func newTestTrace(traceFile string, expected int) *testTrace {
 	t := new(testTrace)
 	byteTraces, err := ioutil.ReadFile(traceFile)
-	t.spans = *new([]spans.Span)
+	t.spans = *new([]span.Span)
 	err = json.Unmarshal(byteTraces, &t.spans)
 	if err != nil {
 		panic(err)

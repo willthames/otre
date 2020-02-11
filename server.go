@@ -1,35 +1,60 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
-	"context"
-	"encoding/json"
+	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"log"
-	"net/http"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/sirupsen/logrus"
+	"github.com/willthames/opentracing-processor/processor"
+	"github.com/willthames/opentracing-processor/span"
 	"github.com/willthames/otre/rules"
-	"github.com/willthames/otre/spans"
 	"github.com/willthames/otre/traces"
 )
 
-type key int
+type OtreApp struct {
+	processor.App
+	flushAge     time.Duration
+	flushTimeout time.Duration
+	abandonAge   time.Duration
+	traceBuffer  *traces.TraceBuffer
+	re           rules.RulesEngine
+}
 
-const (
-	requestIDKey key = 0
-)
+func NewOtreApp() *OtreApp {
+	otreApp := new(OtreApp)
+	outputLines := [5]string{
+		`       _`,
+		`  ___ | |_ _ __ ___`,
+		` / _ \| __| '__/ _ \`,
+		`| (_) | |_| | |  __/`,
+		` \___/ \__|_|  \___|`,
+	}
+	otreApp.OutputLines = outputLines[:]
+	otreApp.BaseCLI()
+	flushAge := flag.Int("flush-age", 30000, "Interval in ms between trace flushes")
+	flushTimeout := flag.Int("flush-timeout", 600000, "Drop traces older than timeout if not successfully forwarded to collector")
+	abandonAge := flag.Int("abandon-age", 300000, "Age in ms after which incomplete trace is flushed")
+	policyFile := flag.String("policy-file", "", "policy definition file")
+	flag.Parse()
+	otreApp.flushAge = time.Duration(*flushAge * 1E6)
+	otreApp.flushTimeout = time.Duration(*flushTimeout * 1E6)
+	otreApp.abandonAge = time.Duration(*abandonAge * 1E6)
+
+	if *policyFile == "" {
+		logrus.Fatal("--policy-file argument is mandatory")
+	}
+	policy, err := ioutil.ReadFile(*policyFile)
+	if err != nil {
+		panic(err)
+	}
+	otreApp.re = *rules.NewRulesEngine(string(policy))
+	return otreApp
+}
 
 var (
 	incompleteTraces = promauto.NewCounter(prometheus.CounterOpts{
@@ -58,148 +83,16 @@ var (
 	})
 )
 
-// handleSpans handles the /api/v1/spans POST endpoint. It decodes the request
-// body and normalizes it to a slice of types.Span instances. The Sink
-// handles that slice. The Mirror, if configured, takes the request body
-// verbatim and sends it to another host.
-func (a *app) handleSpans(w http.ResponseWriter, r *http.Request) {
-	defer r.Body.Close()
-
-	data, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		logrus.WithError(err).Error("Error reading request body")
-		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("error reading request"))
-	}
-
-	contentType := r.Header.Get("Content-Type")
-
-	var result []*spans.Span
-	switch contentType {
-	case "application/json":
-		logrus.Debug("Receiving data in json format")
-		switch r.URL.Path {
-		case "/api/v1/spans":
-			err = json.Unmarshal(data, &result)
-		default:
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("invalid version"))
-			return
-		}
-	case "application/x-thrift":
-		logrus.Debug("Receiving data in thrift format")
-		switch r.URL.Path {
-		case "/api/v1/spans":
-			result, err = spans.DecodeThrift(data)
-		default:
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("thrift only unsupported for v1"))
-			return
-		}
-	default:
-		logrus.WithField("contentType", contentType).Error("unknown content type")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("unknown content type"))
-		return
-	}
-	if err != nil {
-		logrus.WithError(err).WithField("type", contentType).Error("error unmarshaling spans")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("error unmarshaling span data"))
-		return
-	}
-
-	w.WriteHeader(http.StatusAccepted)
+func (a *OtreApp) receiveSpan(span span.Span) {
 	var tbm traces.TraceBufferMetrics
-	for _, span := range result {
-		logrus.WithField("spanID", span.ID).Debug("Adding span to tracebuffer")
-		tbm = a.traceBuffer.AddSpan(*span)
-		spansInBuffer.Add(float64(tbm.SpanDelta))
-		tracesInBuffer.Add(float64(tbm.TraceDelta))
-		logrus.WithField("spanID", span.ID).Debug("Finished adding span to tracebuffer")
-	}
+	logrus.WithField("spanID", span.ID).Debug("Adding span to tracebuffer")
+	tbm = a.traceBuffer.AddSpan(span)
+	spansInBuffer.Add(float64(tbm.SpanDelta))
+	tracesInBuffer.Add(float64(tbm.TraceDelta))
+	logrus.WithField("spanID", span.ID).Debug("Finished adding span to tracebuffer")
 }
 
-// ungzipWrap wraps a handleFunc and transparently ungzips the body of the
-// request if it is gzipped
-func ungzipWrap(hf func(http.ResponseWriter, *http.Request)) func(http.ResponseWriter, *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var newBody io.ReadCloser
-		isGzipped := r.Header.Get("Content-Encoding")
-		if isGzipped == "gzip" {
-			buf := bytes.Buffer{}
-			if _, err := io.Copy(&buf, r.Body); err != nil {
-				logrus.WithError(err).Error("error allocating buffer for ungzipping")
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("error allocating buffer for ungzipping"))
-				return
-			}
-			var err error
-			newBody, err = gzip.NewReader(&buf)
-			if err != nil {
-				logrus.WithError(err).Error("error ungzipping span data")
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("error ungzipping span data"))
-				return
-			}
-			r.Body = newBody
-		}
-		hf(w, r)
-	}
-}
-
-func (a *app) start() error {
-	outputLines := [5]string{
-		`       _`,
-		`  ___ | |_ _ __ ___`,
-		` / _ \| __| '__/ _ \`,
-		`| (_) | |_| | |  __/`,
-		` \___/ \__|_|  \___|`,
-	}
-	logger := log.New(os.Stdout, "http: ", log.LstdFlags)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/spans", ungzipWrap(a.handleSpans))
-	mux.HandleFunc("/api/v2/spans", ungzipWrap(a.handleSpans))
-	mux.HandleFunc("/", http.NotFoundHandler().ServeHTTP)
-
-	a.server = &http.Server{
-		Addr:     fmt.Sprintf(":%d", a.port),
-		Handler:  promhttp.InstrumentMetricHandler(prometheus.DefaultRegisterer, logging(logger)(mux)),
-		ErrorLog: logger,
-	}
-	go a.server.ListenAndServe()
-	for _, line := range outputLines {
-		fmt.Println(line)
-	}
-	logrus.WithField("port", a.port).Info("Listening")
-	ticker := time.NewTicker(a.flushAge)
-	go a.scheduler(ticker)
-	return nil
-}
-
-func logging(logger *log.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
-				requestID, ok := r.Context().Value(requestIDKey).(string)
-				if !ok {
-					requestID = "unknown"
-				}
-				logger.Println(requestID, r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent())
-			}()
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func (a *app) stop() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	return a.server.Shutdown(ctx)
-}
-
-func (a *app) scheduler(tick *time.Ticker) {
+func (a *OtreApp) scheduler(tick *time.Ticker) {
 	for {
 		select {
 		case <-tick.C:
@@ -208,14 +101,14 @@ func (a *app) scheduler(tick *time.Ticker) {
 	}
 }
 
-func (a *app) writeTrace(trace *traces.Trace) error {
+func (a *OtreApp) writeTrace(trace *traces.Trace) error {
 	body, err := trace.MarshalJSON()
 	if err != nil {
 		logrus.WithError(err).WithField("trace", trace).Error("Error converting trace to JSON")
 		return err
 	}
-	if a.forwarder != nil {
-		if err := a.forwarder.Send(payload{ContentType: "application/json", Body: body}); err != nil {
+	if a.Forwarder != nil {
+		if err := a.Forwarder.Send(processor.Payload{ContentType: "application/json", Body: body}); err != nil {
 			logrus.WithError(err).Error("Error forwarding trace")
 			logrus.WithField("body", body).Debug("Error forwarding trace body")
 			return err
@@ -227,7 +120,7 @@ func (a *app) writeTrace(trace *traces.Trace) error {
 	return nil
 }
 
-func (a *app) processSpans() {
+func (a *OtreApp) processSpans() {
 	var traceID traces.TraceID
 	var trace *traces.Trace
 
@@ -309,43 +202,9 @@ func main() {
 	prometheus.Register(timedOutTraces)
 	prometheus.Register(spansInBuffer)
 	prometheus.Register(tracesInBuffer)
-	a := cliParse()
-	level, err := logrus.ParseLevel(a.logLevel)
-	if err != nil {
-		logrus.WithField("logLevel", a.logLevel).Warn("Couldn't parse log level - defaulting to Info")
-		logrus.SetLevel(logrus.InfoLevel)
-	} else {
-		logrus.SetLevel(level)
-	}
-	logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
-	if a.collectorURL != "" {
-		logrus.WithField("collectorURL", a.collectorURL).Debug("Creating trace forwarder")
-		a.forwarder, err = NewForwarder(a.collectorURL)
-		if err != nil {
-			fmt.Printf("%v", err)
-			os.Exit(1)
-		}
-		a.forwarder.Start()
-		defer a.forwarder.Stop()
-	} else {
-		a.forwarder = nil
-	}
-	err = a.start()
-	if err != nil {
-		fmt.Printf("Error starting app: %v\n", err)
-		os.Exit(1)
-	}
 
-	http.Handle("/metrics", promhttp.Handler())
-	http.ListenAndServe(fmt.Sprintf(":%d", a.metricsPort), nil)
-	defer a.stop()
-	waitForSignal()
-}
-
-func waitForSignal() {
-	ch := make(chan os.Signal, 1)
-	defer close(ch)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(ch)
-	<-ch
+	a := NewOtreApp()
+	ticker := time.NewTicker(a.flushAge)
+	go a.scheduler(ticker)
+	a.Serve()
 }
