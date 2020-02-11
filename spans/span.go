@@ -9,7 +9,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/honeycombio/honeycomb-opentracing-proxy/types"
 	"github.com/sirupsen/logrus"
 
 	"github.com/apache/thrift/lib/go/thrift"
@@ -156,7 +155,7 @@ func newV1Span(span Span) v1Span {
 		Annotations:       span.Annotations,
 		Debug:             span.Debug,
 		TraceIDHigh:       span.TraceIDHigh,
-		BinaryAnnotations: span.BinaryAnnotations,
+		BinaryAnnotations: convertJSONAnnotations(span.BinaryAnnotations),
 		Timestamp:         timestamp,
 		Duration:          duration,
 	}
@@ -242,7 +241,7 @@ func convertBinaryAnnotationValue(ba *zipkincore.BinaryAnnotation) interface{} {
 		binary.Read(bytes.NewReader(ba.Value), binary.BigEndian, number)
 		return number
 	case zipkincore.AnnotationType_STRING:
-		return types.GuessAnnotationType(string(ba.Value))
+		return string(ba.Value)
 	}
 
 	return ba.Value
