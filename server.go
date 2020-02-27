@@ -83,7 +83,7 @@ var (
 	})
 )
 
-func (a *OtreApp) receiveSpan(span span.Span) {
+func (a *OtreApp) ReceiveSpan(span span.Span) {
 	var tbm traces.TraceBufferMetrics
 	logrus.WithField("spanID", span.ID).Debug("Adding span to tracebuffer")
 	tbm = a.traceBuffer.AddSpan(span)

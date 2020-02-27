@@ -231,6 +231,6 @@ func (t *Trace) AddTag(key string, value string) error {
 		return err
 	}
 	rootSpan := t.spans[rootSpanID]
-	rootSpan.BinaryAnnotations = append(rootSpan.BinaryAnnotations, span.BinaryAnnotation{Key: key, Value: value})
+	rootSpan.AddTag(key, value)
 	return nil
 }
